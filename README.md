@@ -33,41 +33,43 @@
 <!-- GH_ONLY_END -->
 
 ## 👀 Summary
-NsVehicle drives physics vehicles: cars, karts, trucks, bikes, and hover vehicles. One physics body moves the vehicle. Suspension components push it up from the ground, and module components add the drive, brake, steering, and other forces.
+NsVehicles drives physics vehicles in Unreal Engine: cars, karts, trucks, bikes, and hover vehicles. One physics body moves the vehicle. Suspension components trace the ground and push the body up. Module components add the drive, brake, steering, and other forces. It is for gameplay programmers and designers who want a vehicle that they can tune in the Details panel.
 
-NsVehicle is not a full tyre model. It does not simulate a clutch or a skeletal mesh vehicle, and the wheels are traces, not colliders.
+NsVehicles is not a full tire model, and it is not a Chaos Vehicles replacement. The wheels are traces, not colliders. The drive force acts on the body, not on each wheel. There is no clutch.
 
 ## 📦 Features
-- **Modules**: One component for each system, from the engine to the air control. The vehicle makes all of them by default.
-- **Two powertrains**: An arcade powertrain that drives with no setup, and a standard powertrain with gears, a differential, and drag.
-- **Any drivetrain**: RWD, FWD, AWD, 6WD, and 8WD, from the driven wheels.
-- **Suspension traces**: Ignore surfaces with a custom trace channel.
-- **Wheel detach**: Take a wheel off as a free physics body, and put it back.
-- **Interior parts**: Tachometer, speedometer, steering wheel, pedals, and handbrake lever, animated each frame.
-- **Articulated parts**: Move a part such as a forklift arm.
-- **Spline AI**: Follow a spline with a tunable steering controller.
-- **Replication**: Data only or full replication, plus custom input slots for the server.
-- **Take recorder**: Record the wheel motion.
+- **Modules**: One component for each system, from the engine to the air control. Each vehicle gets all of them.
+- **Two powertrains**: An arcade powertrain with a top speed and no gearbox, and a standard powertrain with RPM, gears, and drag.
+- **Driven wheels**: Mark the driven wheels and their torque share. Driven wheels lose grip and spin when the torque is too high.
+- **Suspension traces**: A sphere trace with a line trace fallback. Use a custom trace channel to ignore surfaces.
+- **Wheel detach**: Release a wheel as a free physics body, and attach it again.
+- **Interior parts**: Tachometer, speedometer, steering wheel, pedals, and handbrake lever.
+- **Articulated parts**: Move a part on one axis, for example a forklift arm.
+- **Spline AI**: A PID controller that gives a steering input to follow a spline.
+- **Replication**: Full or Data Only replication, plus six custom input slots that go to the server.
+- **Take recorder mode**: Spin the wheels from the actor movement for recording and playback.
 
 ## ⚙️ Requirements
-Unreal Engine 5.7+
-
-For replication, enable **Project Settings > Physics > Tick Physics Async**, with a step of 0.008333 (1/120) or a little less.
+- Unreal Engine 5.7+
+- Platforms: Win64, Mac, Linux, Android, and iOS.
+- The bundled `AsyncTickPhysics` module. It is part of this repository.
+- Recommended: **Project Settings > Physics > Tick Physics Async**, so that the vehicle step runs on the physics thread.
 
 ## 🛠️ Installation
 1. **Clone** or download this repository.
-2. Copy the folder into the `Plugins` folder of your project.
-3. Add `"NsVehicle"` and `"AsyncTickPhysics"` to `PublicDependencyModuleNames` in `Build.cs`. `ANsVehicle` derives from `AAsyncTickPawn`, so a C++ child class needs both.
-4. Generate the project files and enable the plugin.
+2. Copy the `NsVehicles` folder into the `Plugins` folder of your project.
+3. For C++, add `"NsVehicle"` and `"AsyncTickPhysics"` to `PublicDependencyModuleNames` in the `Build.cs` file of your game module. `ANsVehicle` derives from `AAsyncTickPawn`.
+4. Generate the project files.
+5. In **Edit > Plugins**, enable **NsVehicle**.
 
 ## 🚀 Getting Started
 1. Make a Blueprint class with `NsVehicle` as the parent.
-2. Add a Static Mesh component as the root. Set a mesh with simple collision, and enable **Simulate Physics**.
-3. Add four `NsVehicleSuspensionComponent` components under the root, at the tops of the wheels.
-4. On each suspension component, set **Wheel Mesh**. On the two front wheels, enable **Is Steering Wheel**.
+2. Add a Static Mesh component as the root. Give it a mesh with simple collision, and enable **Simulate Physics**.
+3. Add four `NsVehicleSuspensionComponent` components under the root, one above each wheel position.
+4. On each suspension component, set **Wheel Mesh**. On the two front ones, enable **Is Steering Wheel**.
 5. In the input events, call `Get Controls`, then `Set Throttle Input`, `Set Brake Input`, and `Set Steering Input`.
 
-With no other setup, the vehicle drives with the arcade powertrain. In C++:
+The default Engine module uses the arcade powertrain, so the vehicle drives with no other setup. In C++:
 
 ```cpp
 #include "Modules/Control/NsVehicleControlsComponent.h"
@@ -100,22 +102,23 @@ void AMyPlayerController::DriveForward(ANsVehicle* Vehicle, const float Input)
 ### Main Classes
 - `ANsVehicle` – The vehicle pawn. It runs the physics step and calls the modules in a fixed order.
 - `UNsVehicleModuleComponent` – The base class of every module.
-- `UNsVehicleSuspensionComponent` – One wheel: the trace, the spring, the wheel mesh, and detach and reattach.
+- `UNsVehicleSuspensionComponent` – One wheel: the trace, the spring, the tire forces, the wheel mesh, and detach.
 - `UNsVehicleInteriorComponent` – The base class of the interior parts.
-- `UNsVehicleArticulatedComponent` – A part that moves on one axis from an input of -1 to 1.
+- `UNsVehicleArticulatedComponent` – A mesh that moves on one axis from an input.
 - `UNsVehicleAI` – Spline following with a PID steering output.
 
 ### Main Functions
 - `GetControls()->SetThrottleInput` / `SetBrakeInput` / `SetSteeringInput` – Drive the vehicle.
 - `GetControls()->ApplyHandbrakeInput` – Pull the handbrake.
-- `GetControls()->SetExtReplicationInput` – Send a custom input from -1 to 1 to the server, in one of 6 slots.
-- `DetachWheel` / `ReattachWheel` – Take a wheel off with an impulse, and put it back. Local only.
+- `GetControls()->SetExtReplicationInput` – Send a custom value from -1 to 1 to the server, in slot 0 to 5.
+- `DetachWheel` / `ReattachWheel` – Release a wheel with an impulse, and attach it again.
+- `Jump` – Add an upward velocity change when the vehicle is on the ground.
 
 ## 🚧 Limits
-- Do not scale the vehicle actor. Use a larger mesh and keep the actor scale at 1.
+- Keep the actor scale at 1. The physics step ignores the actor scale, so a scaled vehicle puts the wheels in the wrong place.
 - Wheel detach and reattach do not replicate.
-- More than three replicated vehicles on a server can crash Chaos. Disable **Auto Wake Rigid Bodies** and wake the bodies from the input events.
-- There is no clutch simulation.
+- The modules are fixed. You cannot replace a module with a subclass.
+- The Blueprint `Event Async Tick` runs two times in each physics step.
 
 ## 📚 Documentation
 - [User Guide](https://mykaadev.github.io/plugins/nsvehicles/user-guide/) – Setup, common tasks, settings, and debug tools.

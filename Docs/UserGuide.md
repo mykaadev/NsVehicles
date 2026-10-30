@@ -6,6 +6,8 @@ NsVehicles is a runtime plugin for physics vehicles: cars, karts, trucks, bikes,
 
 NsVehicles is not a full tire model, and it is not a Chaos Vehicles replacement. The wheels are traces, not colliders. The drive force acts on the body, not on each wheel. There is no clutch.
 
+[![The gearbox and the gauges with the standard powertrain](Showcase/img/gearbox.png)](Showcase/Gearbox.html)
+
 ## Setup
 
 1. Copy the `NsVehicles` folder into the `Plugins` folder of your project.

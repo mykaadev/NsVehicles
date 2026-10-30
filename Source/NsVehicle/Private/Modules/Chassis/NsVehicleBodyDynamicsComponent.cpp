@@ -2,6 +2,7 @@
 
 #include "Modules/Chassis/NsVehicleBodyDynamicsComponent.h"
 #include "AsyncTickFunctions.h"
+#include "GameFramework/Actor.h"
 #include "Wheels/NsVehicleSuspensionComponent.h"
 
 void UNsVehicleBodyDynamicsComponent::InitializeLeanSteer(UNsVehicleSuspensionComponent* SuspensionComponent)

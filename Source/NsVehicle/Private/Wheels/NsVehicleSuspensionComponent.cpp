@@ -99,6 +99,7 @@ void UNsVehicleSuspensionComponent::BeginPlay()
     }
 
     SweepShape = FCollisionShape::MakeSphere(WheelRadius);
+    UpdateWheelLateralOffset();
 
     Direction = this->GetRelativeRotation().Yaw;
 
@@ -423,8 +424,15 @@ void UNsVehicleSuspensionComponent::SetWheelScale(float inScale)
     }
 
     SweepShape = FCollisionShape::MakeSphere(WheelRadius * FMath::Abs(inScale));
+    UpdateWheelLateralOffset();
     ApplyWheelVisualScale(inScale);
     ValidateSuspensionSetup();
+}
+
+void UNsVehicleSuspensionComponent::UpdateWheelLateralOffset()
+{
+    const UStaticMesh* const Mesh = WheelMeshComponent != nullptr ? WheelMeshComponent->GetStaticMesh() : nullptr;
+    WheelLateralOffset = Mesh != nullptr ? Mesh->GetBoundingBox().GetCenter().Y * GetWheelVisualScale() * (bRotateWheel ? -1.f : 1.f) : 0.f;
 }
 
 void UNsVehicleSuspensionComponent::RecalculateWheelRadius()
@@ -440,6 +448,7 @@ void UNsVehicleSuspensionComponent::RecalculateWheelRadius()
     }
 
     SweepShape = FCollisionShape::MakeSphere(WheelRadius * GetWheelVisualScale());
+    UpdateWheelLateralOffset();
     ValidateSuspensionSetup();
 }
 
@@ -543,9 +552,11 @@ void UNsVehicleSuspensionComponent::UpdatePhysics(float DeltaTime, float transmi
 
     FTransform vehicleTransform = UAsyncTickFunctions::ATP_GetTransform(VehiclePrimitiveComponent);
     PhysicsTransform = GetRelativeTransform() * vehicleTransform;
-    Start = PhysicsTransform.GetLocation();
     FVector up = PhysicsTransform.GetRotation().GetUpVector();
     FVector right = PhysicsTransform.GetRotation().GetRightVector();
+
+    // The ground test starts at the center of the wheel, also when the pivot of the wheel mesh is on its inner face
+    Start = PhysicsTransform.GetLocation() + right * WheelLateralOffset;
     FVector fwd = PhysicsTransform.GetRotation().GetForwardVector();
 
     FVector worldPointVelocity = UAsyncTickFunctions::ATP_GetLinearVelocityAtPoint(VehiclePrimitiveComponent, PhysicsTransform.GetLocation());

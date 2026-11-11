@@ -214,6 +214,17 @@ For many replicated vehicles, disable **Auto Wake Rigid Bodies** on the vehicle.
 
 The value goes from the client to the server only. Other clients do not get it.
 
+### Check where a vehicle can drive (reach tool)
+
+The editor module `NsVehicleEditor` paints the ground that a vehicle reaches from a start point. Use it to see which places a wheel setup opens, and to find a way that you did not plan, before a player finds it. It is editor only.
+
+1. Make a **NsVehicle Reach Profile** data asset for each setup. Set the step height, the slope, the drop, the width, the height, and if it crosses water.
+2. In the editor console, run `NsVehicle.Reach X Y Z /Game/Path/Profile`. Green points show the reached ground.
+3. Add a second profile to compare: `NsVehicle.Reach X Y Z /Game/Path/Base /Game/Path/Compare`. Orange points show the ground that only the second profile reaches.
+4. With no editor open, run the commandlet: `-run=NsVehicleReach -Map=/Game/Maps/MyMap -Start=X,Y,Z -Profile=/Game/Path/Profile [-Compare=/Game/Path/Profile] -Out=C:/Path/Reach.csv [-Extent=20000]`. It loads the World Partition cells around the start and writes one point for each line.
+
+A drop is one way: the vehicle goes down it, and the tool does not let it go back up. A box of the vehicle size moves from point to point, so a wall, a narrow gap, or a low roof stops it.
+
 ### Record with the take recorder
 
 1. On the Animation module, enable **Enable Animation Mode**.
@@ -422,6 +433,19 @@ With **Use With Drivetrain** on:
 | NsVehicleStaticWheel | Rotation Multiplier | 1 | Spin scale |
 | NsVehicleWheel | Rotate Wheel | false | Inverts the spin in animation mode |
 
+### Reach tool
+
+Project Settings, NsVehicle Reach:
+
+| Setting | Default | Effect |
+|---|---|---|
+| Grid Spacing | 50 cm | The distance between two tested points. A smaller value finds narrower ways and takes longer |
+| Max Cells | 400000 | The run stops at this number of points |
+| Trace Height | 300 cm | The height above the ground where the trace for the next point starts |
+| Trace Channel | WorldStatic | The channel of the ground and the walls |
+| Water Class Name Filter | WaterBody | An actor whose class name holds this text is water |
+| Reached Color, Compare Only Color, Point Size, Draw Seconds | Green, orange, 6, 120 s | The drawing in the editor |
+
 ## Debug
 
 - On a suspension component, enable **Debug**. The sphere trace draws as a capsule. Its color goes from green to red with the compression. A line trace draws in orange. The impact point draws in yellow.
@@ -429,7 +453,7 @@ With **Use With Drivetrain** on:
 - All messages use the log category `LogTemp`. Search the Output Log for `NsVehicle`.
 - To show the state on screen, read `Get Speed KPH`, `Is In Air`, `Get RPM`, `Get Current Gear`, `Is Slipping`, or `Is Idle Locked`.
 
-The plugin has no console commands and no console variables.
+The editor console command `NsVehicle.Reach` runs the reach tool. The runtime has no console commands and no console variables. The reach tool logs to `LogNsVehicleEditor`.
 
 ## Troubleshooting
 

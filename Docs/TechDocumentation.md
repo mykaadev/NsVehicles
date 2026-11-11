@@ -4,12 +4,13 @@
 
 ### Modules
 
-The descriptor is `NsVehicle.uplugin`. It has two modules. Both are on Win64, Mac, IOS, Android, and Linux only.
+The descriptor is `NsVehicle.uplugin`. It has three modules. The two runtime modules are on Win64, Mac, IOS, Android, and Linux only.
 
 | Module | Type | Loading phase | Content |
 |---|---|---|---|
 | `AsyncTickPhysics` | Runtime | Default | `AAsyncTickPawn`, `UAsyncTickActorComponent`, the Chaos sim callback that calls them, and `UAsyncTickFunctions` for physics thread force and velocity calls |
 | `NsVehicle` | Runtime | Default | The vehicle pawn, the modules, the wheels, the interior parts, the articulated part, and the AI steering |
+| `NsVehicleEditor` | Editor | Default | The reach tool: `UNsVehicleReachProfile`, `UNsVehicleReachSettings`, `UNsVehicleReachLibrary`, the `NsVehicle.Reach` console command, and the `NsVehicleReach` commandlet. It does not depend on the runtime modules |
 
 `AsyncTickPhysics` is bundled in `Source/ThirdParty/AsyncTickPhysics/Source/AsyncTickPhysics/`. It has no descriptor of its own. `NsVehicle.uplugin` lists it.
 
@@ -121,7 +122,10 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 | `Core` | Public, `AsyncTickPhysics` | Base types |
 | `CoreUObject`, `Engine`, `Slate`, `SlateCore`, `Chaos` | Private, `AsyncTickPhysics` | Physics scene delegates and the Chaos sim callback |
 
-`AsyncTickPhysics.Build.cs` also calls `SetupModulePhysicsSupport`. The `.uplugin` lists no plugin dependencies.
+| `Core`, `CoreUObject`, `Engine`, `DeveloperSettings` | Public, `NsVehicleEditor` | The profile, the settings, and the queries |
+| `UnrealEd` | Private, `NsVehicleEditor` | The map load and the commandlet |
+
+`AsyncTickPhysics.Build.cs` also calls `SetupModulePhysicsSupport`. The `.uplugin` lists no plugin dependencies. The reach tool tests water by the class name of an actor, so it needs no Water plugin.
 
 ## Performance
 
@@ -131,6 +135,7 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 - `UNsVehicleStaticWheel` reads the local bounds of its mesh every frame.
 - `GetSuspension` returns a copy of the array. Do not call it in a hot loop.
 - `bAutoWakeRigidBodies` wakes the body every frame.
+- The reach tool runs only in the editor. Each tested point does one line trace, one sweep, and one overlap for water. A 400 by 400 m area at 50 cm is about 640000 points, so use a larger grid spacing or an extent for a first look.
 
 ## Networking
 

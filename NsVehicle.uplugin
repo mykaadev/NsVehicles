@@ -36,6 +36,11 @@
 				"Android",
 				"Linux"
 			]
+		},
+		{
+			"Name": "NsVehicleEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }

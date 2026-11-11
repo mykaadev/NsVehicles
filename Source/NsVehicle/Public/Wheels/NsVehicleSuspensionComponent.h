@@ -143,6 +143,18 @@ public:
     /** Returns the wheel radius in cm */
     float GetWheelRadius();
 
+    /** Returns the wheel radius in cm with the wheel scale. The ride height, the trace length, and the wheel spin use it */
+    UFUNCTION(BlueprintPure, Category = "NsVehicleSuspensionComponent")
+    float GetScaledWheelRadius() const;
+
+    /** Sets the friction of the traction limit of a driven wheel. Higher values give less slip */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
+    void SetFrictionCoefficient(float InFrictionCoefficient);
+
+    /** Sets the lateral force scalar of a wheel that does not slip */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
+    void SetMaxLateralForceScalar(float InMaxLateralForceScalar);
+
     /** Returns the wheel spin multiplier */
     float GetAngularVelocityMultiplier();
 

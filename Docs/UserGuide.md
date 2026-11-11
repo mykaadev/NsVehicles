@@ -75,6 +75,13 @@ Each system is a module component on the vehicle. Select the module in the Compo
 
 The suspension uses half the mesh height as the wheel radius. With no wheel mesh, it uses **Radius** (33 cm).
 
+### Change a wheel at run time
+
+1. Call `SetWheelScale` for a bigger or a smaller wheel. The scaled radius sets the ride height, the trace length, and the wheel spin, so a big wheel lifts the vehicle.
+2. Call `SetFrictionCoefficient` and `SetMaxLateralForceScalar` to change the grip of a driven wheel.
+
+`GetScaledWheelRadius` returns the radius with the scale. `GetWheelRadius` returns the radius of the mesh with no scale.
+
 ### Show the wheels in the editor
 
 1. Add a Static Mesh component under each suspension component. Set the wheel mesh on it.

@@ -141,7 +141,7 @@ void UNsVehicleSuspensionComponent::SimulateInternalAnimation(float deltaTime, U
     LocationVelocity = UKismetMathLibrary::InverseTransformDirection(t, worldlocationVelocity).X;
 
     float v = LocationVelocity;
-    float angularVelocity = (v * 100.f) / WheelRadius * -1.f;
+    float angularVelocity = (v * 100.f) / GetScaledWheelRadius() * -1.f;
 
     //If the frame rate is higher than 60, scale the rotation accordingly to compensate these extra rotations added every frame
     float timeScalar = 60.f / FMath::Pow(deltaTime, -1.f);
@@ -280,9 +280,11 @@ void UNsVehicleSuspensionComponent::UpdateTick(float DeltaTime)
 
     if (bSingleRaycast)
     {
-        wheelAnimZ = -CurrentLength + (0.5f * WheelRadius * 2.f) - deformation;
-        WheelMeshComponent->SetRelativeLocation(FVector(0.f, 0.f, -CurrentLength + (0.5f * WheelRadius * 2.f) - deformation));
-        WheelRelativeOffset = -CurrentLength + (0.5f * WheelRadius * 2.f) - deformation;
+        // A scaled wheel sits on its scaled radius, so a big wheel lifts the car and a small one lowers it
+        const float ScaledRadius = GetScaledWheelRadius();
+        wheelAnimZ = -CurrentLength + ScaledRadius - deformation;
+        WheelMeshComponent->SetRelativeLocation(FVector(0.f, 0.f, -CurrentLength + ScaledRadius - deformation));
+        WheelRelativeOffset = -CurrentLength + ScaledRadius - deformation;
     }
     else
     {
@@ -300,7 +302,7 @@ void UNsVehicleSuspensionComponent::UpdateTick(float DeltaTime)
 
 
     float v = LinearVelocity.X;
-    float angularVelocity =  (v * 100.f) / WheelRadius * -1.f;
+    float angularVelocity =  (v * 100.f) / GetScaledWheelRadius() * -1.f;
 
     //If the frame rate is higher than 60, scale the rotation accordingly to compensate these extra rotations added every frame
     float timeScalar = 60.f / FMath::Pow(DeltaTime, -1.f);
@@ -612,7 +614,7 @@ void UNsVehicleSuspensionComponent::UpdatePhysics(float DeltaTime, float transmi
     {
         //Pure Linetrace//
         bSingleRaycast = true;
-        length = ExtensionLength + WheelRadius + (0.125f * WheelRadius);
+        length = ExtensionLength + GetScaledWheelRadius() * 1.125f;
         End = Start - (up * length);
         //GetWorld()->LineTraceSingleByChannel(Hit, Start, Start - (up * length), ECC_WorldStatic, queryparam);
         GetWorld()->LineTraceSingleByChannel(Hit, Start, End, CollisionChannel, queryparam);
@@ -898,6 +900,21 @@ bool UNsVehicleSuspensionComponent::IsLeftWheel()
 float UNsVehicleSuspensionComponent::GetWheelRadius()
 {
     return WheelRadius;
+}
+
+float UNsVehicleSuspensionComponent::GetScaledWheelRadius() const
+{
+    return WheelRadius * GetWheelVisualScale();
+}
+
+void UNsVehicleSuspensionComponent::SetFrictionCoefficient(const float InFrictionCoefficient)
+{
+    FrictionCoefficient = FMath::Max(InFrictionCoefficient, 0.f);
+}
+
+void UNsVehicleSuspensionComponent::SetMaxLateralForceScalar(const float InMaxLateralForceScalar)
+{
+    MaxLateralForceScalar = FMath::Max(InMaxLateralForceScalar, 0.f);
 }
 
 float UNsVehicleSuspensionComponent::GetAngularVelocityMultiplier()

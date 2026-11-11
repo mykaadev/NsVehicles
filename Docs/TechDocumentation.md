@@ -36,7 +36,7 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 
 - `ANsVehicle` derives from `AAsyncTickPawn`. It owns the physics state: the physics transform, the local velocity, the speed, the acceleration, the yaw rate, and the airborne state. It makes one of each module in its constructor and calls them in a fixed order. Its only tuning values are `InAirWheelCount` and `bAutoWakeRigidBodies`.
 - `UNsVehicleModuleComponent` is the abstract base of the 13 modules. A module does not tick. It caches the owner `ANsVehicle` in `OnRegister`. Its physics functions take values as arguments, or read them through the vehicle getters.
-- `UNsVehicleSuspensionComponent` is a scene component. It traces the ground, applies the spring, lateral, and resistance forces at its location, runs the slip model for a driven wheel, and places and spins its wheel mesh.
+- `UNsVehicleSuspensionComponent` is a scene component. It traces the ground, applies the spring, lateral, and resistance forces at its location, runs the slip model for a driven wheel, and places and spins its wheel mesh. The wheel scale applies to the sweep sphere, the trace length, the wheel height, and the wheel spin through `GetScaledWheelRadius`. A scale of 1 behaves as before.
 - `UNsVehicleInteriorComponent` is an abstract static mesh component. It maps one vehicle value to a rotation on one axis.
 - `UNsVehicleArticulatedComponent` is a static mesh component that moves on one axis from an input.
 - `UNsVehicleAI` is an actor component. It turns the lateral distance to a spline into a steering value with a PID controller. It does not drive the vehicle. The caller sends its output to the Controls module.

@@ -2,11 +2,13 @@
 
 #include "NsVehicleReachLibrary.h"
 
+#include "Algo/Reverse.h"
 #include "Containers/Queue.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Misc/FileHelper.h"
+#include "UObject/Package.h"
 #include "NsVehicleEditorModule.h"
 #include "NsVehicleReachProfile.h"
 #include "NsVehicleReachSettings.h"
@@ -25,7 +27,7 @@ TArray<FVector> UNsVehicleReachLibrary::ComputeReach(const UObject* const WorldC
     const float Spacing = Settings->GridSpacing;
     FVector StartGround;
     // The start can be any height above the ground, so its trace goes all the way down
-    if (!FindGround(World, Start + FVector(0.f, 0.f, Settings->TraceHeight), Start.Z + Settings->TraceHeight + 1000000.f, StartGround))
+    if (!FindGround(World, Start + FVector(0.f, 0.f, Settings->TraceHeight), Start.Z + Settings->TraceHeight + 1000000.f, StartGround, TArray<AActor*>()))
     {
         UE_LOG(LogNsVehicleEditor, Warning, TEXT("ComputeReach found no ground under the start %s"), *Start.ToString());
         return Reached;
@@ -57,7 +59,7 @@ TArray<FVector> UNsVehicleReachLibrary::ComputeReach(const UObject* const WorldC
                 continue;
             }
             FVector Ground;
-            if (!FindGround(World, Above, Settings->TraceHeight + Profile->MaxDropHeight, Ground) || !CanStep(World, *Profile, From, Ground))
+            if (!FindGround(World, Above, Settings->TraceHeight + Profile->MaxDropHeight, Ground, TArray<AActor*>()) || !CanStep(World, *Profile, From, Ground, TArray<AActor*>()))
             {
                 continue;
             }
@@ -119,11 +121,123 @@ bool UNsVehicleReachLibrary::WriteReachFile(const TArray<FVector>& Points, const
     return FFileHelper::SaveStringArrayToFile(Lines, *FilePath);
 }
 
-bool UNsVehicleReachLibrary::FindGround(const UWorld* const World, const FVector& Above, const float TraceDepth, FVector& OutGround)
+TArray<FVector> UNsVehicleReachLibrary::FindPath(const UObject* const WorldContextObject, const FVector Start, const FVector Goal, const UNsVehicleReachProfile* const Profile, const TArray<AActor*>& IgnoredActors)
+{
+    TArray<FVector> Path;
+    const UWorld* const World = WorldContextObject != nullptr ? WorldContextObject->GetWorld() : nullptr;
+    if (World == nullptr || Profile == nullptr)
+    {
+        UE_LOG(LogNsVehicleEditor, Error, TEXT("FindPath needs a world and a profile"));
+        return Path;
+    }
+
+    const UNsVehicleReachSettings* const Settings = GetDefault<UNsVehicleReachSettings>();
+    const float Spacing = Settings->GridSpacing;
+
+    // A vehicle stalls at its exact slope limit on rough ground, so the way keeps a margin under the limit of the profile
+    UNsVehicleReachProfile* const PathProfile = DuplicateObject<UNsVehicleReachProfile>(Profile, GetTransientPackage());
+    PathProfile->MaxSlopeDegrees *= Settings->PathSlopeMargin;
+
+    FVector StartGround;
+    if (!FindGround(World, Start + FVector(0.f, 0.f, Settings->TraceHeight), Start.Z + Settings->TraceHeight + 1000000.f, StartGround, IgnoredActors))
+    {
+        UE_LOG(LogNsVehicleEditor, Warning, TEXT("FindPath found no ground under the start %s"), *Start.ToString());
+        return Path;
+    }
+
+    // The grid of the reach tool, with the start at cell 0,0. Each cell keeps the ground height where the vehicle stood
+    const FIntPoint GoalCell(FMath::RoundToInt((Goal.X - Start.X) / Spacing), FMath::RoundToInt((Goal.Y - Start.Y) / Spacing));
+    const auto Heuristic = [GoalCell, Spacing](const FIntPoint& Cell) { return static_cast<float>(FVector2D(Cell - GoalCell).Size()) * Spacing; };
+    struct FOpenCell
+    {
+        FIntPoint Cell;
+        float Cost;
+    };
+    const auto ByCost = [](const FOpenCell& A, const FOpenCell& B) { return A.Cost < B.Cost; };
+
+    TMap<FIntPoint, float> GroundZ;
+    TMap<FIntPoint, float> CostSoFar;
+    TMap<FIntPoint, FIntPoint> CameFrom;
+    TArray<FOpenCell> Open;
+    const FIntPoint Origin(0, 0);
+    GroundZ.Add(Origin, StartGround.Z);
+    CostSoFar.Add(Origin, 0.f);
+    Open.HeapPush({ Origin, Heuristic(Origin) }, ByCost);
+
+    static const FIntPoint Neighbours[] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1} };
+    bool bFound = false;
+    FIntPoint Reached = Origin;
+    int32 Expanded = 0;
+    while (Open.Num() > 0)
+    {
+        FOpenCell Current;
+        Open.HeapPop(Current, ByCost);
+        if (Current.Cost > CostSoFar[Current.Cell] + Heuristic(Current.Cell) + 0.01f)
+        {
+            continue;
+        }
+        if ((Current.Cell - GoalCell).SizeSquared() <= 2)
+        {
+            bFound = true;
+            Reached = Current.Cell;
+            break;
+        }
+        if (++Expanded >= Settings->MaxCells)
+        {
+            UE_LOG(LogNsVehicleEditor, Warning, TEXT("FindPath stopped at the cell limit of %d. Raise Max Cells or the grid spacing"), Settings->MaxCells);
+            break;
+        }
+
+        const FVector From(Start.X + Current.Cell.X * Spacing, Start.Y + Current.Cell.Y * Spacing, GroundZ[Current.Cell]);
+        for (const FIntPoint& Step : Neighbours)
+        {
+            const FIntPoint Next = Current.Cell + Step;
+            const FVector Above(Start.X + Next.X * Spacing, Start.Y + Next.Y * Spacing, From.Z + Settings->TraceHeight);
+            FVector Ground;
+            if (!FindGround(World, Above, Settings->TraceHeight + PathProfile->MaxDropHeight, Ground, IgnoredActors) || !CanStep(World, *PathProfile, From, Ground, IgnoredActors))
+            {
+                continue;
+            }
+
+            // A steep step costs more, so the way keeps to gentle ground when it can
+            const float Run = FVector::Dist2D(From, Ground);
+            const float Slope = FMath::Max(Ground.Z - From.Z, 0.f) / FMath::Max(Run, 1.f) / FMath::Max(FMath::Tan(FMath::DegreesToRadians(PathProfile->MaxSlopeDegrees)), 0.01f);
+            const float NewCost = CostSoFar[Current.Cell] + Run * (1.f + Settings->PathSlopeCost * Slope * Slope);
+            const float* const OldCost = CostSoFar.Find(Next);
+            if (OldCost == nullptr || NewCost < *OldCost)
+            {
+                CostSoFar.Add(Next, NewCost);
+                GroundZ.Add(Next, Ground.Z);
+                CameFrom.Add(Next, Current.Cell);
+                Open.HeapPush({ Next, NewCost + Heuristic(Next) }, ByCost);
+            }
+        }
+    }
+
+    if (!bFound)
+    {
+        UE_LOG(LogNsVehicleEditor, Warning, TEXT("FindPath found no way from %s to %s with %s"), *Start.ToString(), *Goal.ToString(), *Profile->GetName());
+        return Path;
+    }
+
+    for (FIntPoint Cell = Reached; ; Cell = CameFrom[Cell])
+    {
+        Path.Add(FVector(Start.X + Cell.X * Spacing, Start.Y + Cell.Y * Spacing, GroundZ[Cell]));
+        if (Cell == Origin)
+        {
+            break;
+        }
+    }
+    Algo::Reverse(Path);
+    return Path;
+}
+
+bool UNsVehicleReachLibrary::FindGround(const UWorld* const World, const FVector& Above, const float TraceDepth, FVector& OutGround, const TArray<AActor*>& IgnoredActors)
 {
     const UNsVehicleReachSettings* const Settings = GetDefault<UNsVehicleReachSettings>();
     FHitResult Hit;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehicleReachGround), true);
+    Params.AddIgnoredActors(IgnoredActors);
     if (!World->LineTraceSingleByChannel(Hit, Above, Above - FVector(0.f, 0.f, TraceDepth), Settings->TraceChannel, Params))
     {
         return false;
@@ -154,7 +268,7 @@ bool UNsVehicleReachLibrary::IsWater(const UWorld* const World, const FVector& G
     return false;
 }
 
-bool UNsVehicleReachLibrary::CanStep(const UWorld* const World, const UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To)
+bool UNsVehicleReachLibrary::CanStep(const UWorld* const World, const UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const TArray<AActor*>& IgnoredActors)
 {
     const float Rise = To.Z - From.Z;
     const float Run = FVector::Dist2D(From, To);
@@ -182,6 +296,7 @@ bool UNsVehicleReachLibrary::CanStep(const UWorld* const World, const UNsVehicle
     const FQuat Rotation = Direction.IsNearlyZero() ? FQuat::Identity : Direction.Rotation().Quaternion();
     const FCollisionShape Box = FCollisionShape::MakeBox(FVector(1.f, Profile.HalfWidth, FMath::Max(HalfHeight - Profile.MaxStepHeight * 0.5f, 1.f)));
     FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehicleReachSweep), false);
+    Params.AddIgnoredActors(IgnoredActors);
     FHitResult Hit;
     return !World->SweepSingleByChannel(Hit, From + Lift, To + FVector(0.f, 0.f, FMath::Max(From.Z - To.Z, 0.f)) + Lift, Rotation, Settings->TraceChannel, Box, Params);
 }

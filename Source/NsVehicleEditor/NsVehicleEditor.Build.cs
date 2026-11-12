@@ -22,6 +22,7 @@ public class NsVehicleEditor : ModuleRules
             new string[]
             {
                 "UnrealEd",
+                "NsVehicle",
             }
         );
     }

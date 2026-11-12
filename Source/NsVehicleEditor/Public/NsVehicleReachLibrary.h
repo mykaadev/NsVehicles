@@ -34,13 +34,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NsVehicle|Reach")
     static bool WriteReachFile(const TArray<FVector>& Points, const FString& FilePath);
 
+    /** Finds a way that the profile can drive from the start to the goal, with A* on the reach grid. The traces ignore the ignored actors, for example the vehicle at the start. Returns the ground points of the way, or an empty array when the goal is out of reach */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle|Reach", meta = (WorldContext = "WorldContextObject", AutoCreateRefTerm = "IgnoredActors"))
+    static TArray<FVector> FindPath(const UObject* WorldContextObject, FVector Start, FVector Goal, const class UNsVehicleReachProfile* Profile, const TArray<class AActor*>& IgnoredActors);
+
 private:
-    /** Finds the ground under a point. Returns false when there is no ground in the trace */
-    static bool FindGround(const class UWorld* World, const FVector& Above, float TraceDepth, FVector& OutGround);
+    /** Finds the ground under a point. The trace ignores the ignored actors. Returns false when there is no ground in the trace */
+    static bool FindGround(const class UWorld* World, const FVector& Above, float TraceDepth, FVector& OutGround, const TArray<class AActor*>& IgnoredActors);
 
     /** True when the ground point is water */
     static bool IsWater(const class UWorld* World, const FVector& Ground);
 
-    /** True when the vehicle of the profile can drive from one ground point to the next */
-    static bool CanStep(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To);
+    /** True when the vehicle of the profile can drive from one ground point to the next. The sweep ignores the ignored actors */
+    static bool CanStep(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const TArray<class AActor*>& IgnoredActors);
 };

@@ -9,8 +9,8 @@ The descriptor is `NsVehicle.uplugin`. It has three modules. The two runtime mod
 | Module | Type | Loading phase | Content |
 |---|---|---|---|
 | `AsyncTickPhysics` | Runtime | Default | `AAsyncTickPawn`, `UAsyncTickActorComponent`, the Chaos sim callback that calls them, and `UAsyncTickFunctions` for physics thread force and velocity calls |
-| `NsVehicle` | Runtime | Default | The vehicle pawn, the modules, the wheels, the interior parts, the articulated part, and the AI steering |
-| `NsVehicleEditor` | Editor | Default | The reach tool: `UNsVehicleReachProfile`, `UNsVehicleReachSettings`, `UNsVehicleReachLibrary`, the `NsVehicle.Reach` console command, and the `NsVehicleReach` commandlet. It does not depend on the runtime modules |
+| `NsVehicle` | Runtime | Default | The vehicle pawn, the modules, the wheels, the interior parts, the articulated part, and the AI steering and drive mode |
+| `NsVehicleEditor` | Editor | Default | The reach tool: `UNsVehicleReachProfile`, `UNsVehicleReachSettings`, `UNsVehicleReachLibrary`, the `NsVehicle.Reach` console command, and the `NsVehicleReach` commandlet. The drive-to tool: `UNsVehicleReachLibrary::FindPath` and the `NsVehicle.DriveTo` and `NsVehicle.DriveStop` console commands. It depends on `NsVehicle` for the drive-to tool |
 
 `AsyncTickPhysics` is bundled in `Source/ThirdParty/AsyncTickPhysics/Source/AsyncTickPhysics/`. It has no descriptor of its own. `NsVehicle.uplugin` lists it.
 
@@ -40,7 +40,8 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 - `UNsVehicleSuspensionComponent` is a scene component. It traces the ground, applies the spring, lateral, and resistance forces at its location, runs the slip model for a driven wheel, and places and spins its wheel mesh. The wheel scale applies to the sweep sphere, the trace length, the wheel height, and the wheel spin through `GetScaledWheelRadius`. A scale of 1 behaves as before.
 - `UNsVehicleInteriorComponent` is an abstract static mesh component. It maps one vehicle value to a rotation on one axis.
 - `UNsVehicleArticulatedComponent` is a static mesh component that moves on one axis from an input.
-- `UNsVehicleAI` is an actor component. It turns the lateral distance to a spline into a steering value with a PID controller. It does not drive the vehicle. The caller sends its output to the Controls module.
+- `UNsVehicleAI` is an actor component. It turns the lateral distance to a spline into a steering value with a PID controller, and the caller sends that value to the Controls module. In the drive mode (`StartDrive`) its tick sets the throttle, the brake, and the steering of the Controls module itself: pure pursuit to a point ahead on the spline, a drive backward after a stall, and the events `OnDriveArrived` and `OnDriveStuck`.
+- `UNsVehicleReachLibrary::FindPath` runs A* on the grid of the reach tool, with the same ground, step, slope, water, and box tests. It searches with a transient copy of the profile whose slope limit is scaled by `PathSlopeMargin`. The step cost is the run times one plus `PathSlopeCost` times the square of the slope against that limit. The heuristic is the straight distance to the goal cell.
 - `UNsVehicleStaticWheel` spins its mesh from the root velocity in its own tick. It does not need `ANsVehicle`.
 - `UNsVehicleWheel` is a static mesh with the tag `NsVehicleWheel`. The Animation module spins it.
 
@@ -123,7 +124,8 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 | `CoreUObject`, `Engine`, `Slate`, `SlateCore`, `Chaos` | Private, `AsyncTickPhysics` | Physics scene delegates and the Chaos sim callback |
 
 | `Core`, `CoreUObject`, `Engine`, `DeveloperSettings` | Public, `NsVehicleEditor` | The profile, the settings, and the queries |
-| `UnrealEd` | Private, `NsVehicleEditor` | The map load and the commandlet |
+| `UnrealEd` | Private, `NsVehicleEditor` | The map load, the commandlet, and the Play In Editor world of the drive-to tool |
+| `NsVehicle` | Private, `NsVehicleEditor` | `ANsVehicle` and `UNsVehicleAI` for the drive-to tool |
 
 `AsyncTickPhysics.Build.cs` also calls `SetupModulePhysicsSupport`. The `.uplugin` lists no plugin dependencies. The reach tool tests water by the class name of an actor, so it needs no Water plugin.
 
@@ -131,11 +133,12 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 
 - The vehicle ticks on the game thread and runs one step for each physics step. The modules do not tick.
 - Each suspension component does one sphere sweep in each physics step. When the sphere hit fails the normal or height check, or **Hybrid Raycast** is off, it also does one line trace.
-- Each suspension component and each `UNsVehicleAI` component has tick enabled with an empty `TickComponent`.
+- Each suspension component has tick enabled with an empty `TickComponent`. A `UNsVehicleAI` component ticks, and it does work only in the drive mode: one closest-key search on the spline and one component search for the Controls module in each tick.
 - `UNsVehicleStaticWheel` reads the local bounds of its mesh every frame.
 - `GetSuspension` returns a copy of the array. Do not call it in a hot loop.
 - `bAutoWakeRigidBodies` wakes the body every frame.
 - The reach tool runs only in the editor. Each tested point does one line trace, one sweep, and one overlap for water. A 400 by 400 m area at 50 cm is about 640000 points, so use a larger grid spacing or an extent for a first look.
+- `FindPath` tests each neighbor of each expanded cell, so it can test a cell more than one time. It stops at **Max Cells** expanded cells. A goal far behind a wall can expand most of the reach area before the search fails.
 
 ## Networking
 

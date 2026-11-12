@@ -186,6 +186,29 @@ Each one has **Input Range**, **Output Range**, **Rotation Axis**, **Use Smoothi
 
 Tune **Kp** first, then **Kd** and **Kd2**. Use **Ki** to remove a constant offset. Call `Refresh` when you change the spline.
 
+### Drive along a spline with AI
+
+The drive mode of `NsVehicleAI` sets the throttle, the brake, and the steering itself. You do not call `Update`.
+
+1. Add an `NsVehicleAI` component to the vehicle.
+2. Call `Start Drive` with a spline component. The vehicle drives to the end of the spline.
+3. Bind **On Drive Arrived** and **On Drive Stuck**. Call `Stop Drive` to stop early.
+
+The drive mode steers to a point **Look Ahead Distance** ahead on the spline. After a stall it drives backward for **Reverse Seconds**, then tries again. After **Max Stall Retries** stalls with no progress, it stops and broadcasts **On Drive Stuck**. A player input in the same frame overrides it, so do not drive while the drive mode runs.
+
+### Drive to a point in a play test (drive-to tool)
+
+The editor module finds a way that a reach profile can drive, with A* on the reach grid, and drives the player vehicle along it. Use it to play test a route with a wheel setup, without driving by hand. It is editor only.
+
+1. Set **Drive Profile** in Project Settings, NsVehicle Reach, or pass a profile in the command.
+2. Start Play In Editor.
+3. In the console, run `NsVehicle.DriveTo X Y Z [/Game/Path/Profile]`. The way draws in green, and the vehicle drives it.
+4. Run `NsVehicle.DriveStop` to stop.
+
+The vehicle is the pawn of the first player, or the vehicle nearest to that pawn. From C++ or Python, call `UNsVehicleReachLibrary::FindPath` to get the ground points of the way without a drive. Pass the vehicle in **Ignored Actors** when the search starts inside it.
+
+While the vehicle drives, the screen shows one line: the state, the progress, the speed, the pitch, and the stall count. The way is green where it is easy, yellow near the slope limit, and red over it. When the vehicle gets stuck, the line says why: "blocked by" an actor means that the way leads into an object, and "cannot climb" means that the ground is too steep for the wheels.
+
 ### Ignore some surfaces
 
 1. In **Project Settings > Collision**, add a trace channel with the default response Block.
@@ -428,6 +451,17 @@ With **Use With Drivetrain** on:
 | NsVehicleAI | Output Max | 1 | Maximum steering output |
 | NsVehicleAI | Min Delta Time | 0.0001 | Minimum time step for the I and D terms |
 | NsVehicleAI | Draw Debug | false | Draws the target point and the error |
+| NsVehicleAI | Drive Throttle | 1 | Throttle input of the drive mode |
+| NsVehicleAI | Look Ahead Distance | 150 cm | Distance ahead on the spline of the steering point |
+| NsVehicleAI | Full Steer Angle | 30 deg | Angle to the steering point that gives the full steering input |
+| NsVehicleAI | Arrive Distance | 120 cm | Distance to the end of the spline at which the drive mode stops |
+| NsVehicleAI | Stall Speed | 5 cm/s | Speed under which the vehicle counts as stalled |
+| NsVehicleAI | Stall Seconds | 2.5 s | Time under the stall speed before the drive mode backs off |
+| NsVehicleAI | Reverse Seconds | 1.5 s | Time of the drive backward after a stall |
+| NsVehicleAI | Max Stall Retries | 4 | Stalls with no progress before On Drive Stuck |
+| NsVehicleAI | No Progress Seconds | 6 s | Time with no progress along the spline after which a slow vehicle backs off, for example when it shakes against a wall |
+| NsVehicleAI | No Progress Speed | 30 cm/s | Speed under which no progress counts as a stall. A faster vehicle, for example one that drives back to the spline from the side, does not back off |
+| NsVehicleAI | Progress Distance | 100 cm | Gain along the spline that resets the stall count |
 | NsVehicleStaticWheel | Enabled | true | Spins the wheel |
 | NsVehicleStaticWheel | Invert Direction | false | Inverts the spin |
 | NsVehicleStaticWheel | Rotation Multiplier | 1 | Spin scale |
@@ -445,6 +479,10 @@ Project Settings, NsVehicle Reach:
 | Trace Channel | WorldStatic | The channel of the ground and the walls |
 | Water Class Name Filter | WaterBody | An actor whose class name holds this text is water |
 | Reached Color, Compare Only Color, Point Size, Draw Seconds | Green, orange, 6, 120 s | The drawing in the editor |
+| Path Slope Cost | 2 | The extra cost of a climb in the path search. At 0 the way is the shortest. Higher values keep the way on gentle ground |
+| Path Slope Margin | 0.8 | The part of the slope limit of the profile that the path search uses. A vehicle stalls at its exact limit on rough ground |
+| Drive Profile | None | The profile of `NsVehicle.DriveTo` when the command names none |
+| Drive Spline Spacing | 150 cm | The distance between two points of the spline that `NsVehicle.DriveTo` makes from the way |
 
 ## Debug
 
@@ -453,7 +491,7 @@ Project Settings, NsVehicle Reach:
 - All messages use the log category `LogTemp`. Search the Output Log for `NsVehicle`.
 - To show the state on screen, read `Get Speed KPH`, `Is In Air`, `Get RPM`, `Get Current Gear`, `Is Slipping`, or `Is Idle Locked`.
 
-The editor console command `NsVehicle.Reach` runs the reach tool. The runtime has no console commands and no console variables. The reach tool logs to `LogNsVehicleEditor`.
+The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.DriveTo` and `NsVehicle.DriveStop` run the drive-to tool in Play In Editor. The runtime has no console commands and no console variables. The reach tool and the drive-to tool log to `LogNsVehicleEditor`. The drive mode of `NsVehicleAI` logs to `LogNsVehicleAI`: an arrival as Display, and a stuck vehicle as Warning. With **Draw Debug**, the drive mode draws a yellow line to its steering point.
 
 ## Troubleshooting
 
@@ -484,6 +522,8 @@ The editor console command `NsVehicle.Reach` runs the reach tool. The runtime ha
 - The custom inputs go to the server only.
 - The modules are fixed. You cannot remove a module or replace it with a subclass.
 - There is no clutch simulation.
+- The path search of the drive-to tool is editor only. A packaged game can use the drive mode of `NsVehicleAI`, but it must make its own spline.
+- The path search tests the same grid as the reach tool. A way that is narrower than the grid spacing can be missed.
 
 ### Keep a parked vehicle on a slope
 

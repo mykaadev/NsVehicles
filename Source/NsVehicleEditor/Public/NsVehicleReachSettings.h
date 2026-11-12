@@ -54,4 +54,20 @@ public:
     /** The time that a drawing stays in the editor */
     UPROPERTY(Config, EditAnywhere, Category = "Drawing", meta = (ClampMin = "1.0", Units = "s"))
     float DrawSeconds;
+
+    /** The extra cost of a climb in the path search. At 0 the way is the shortest. Higher values keep the way on gentle ground */
+    UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "0.0"))
+    float PathSlopeCost;
+
+    /** The part of the slope limit of the profile that the path search uses. A vehicle stalls at its exact limit on rough ground, so the way keeps this margin */
+    UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+    float PathSlopeMargin;
+
+    /** The profile that NsVehicle.DriveTo uses when the command names no profile */
+    UPROPERTY(Config, EditAnywhere, Category = "Drive To")
+    TSoftObjectPtr<class UNsVehicleReachProfile> DriveProfile;
+
+    /** The distance between two points of the spline that NsVehicle.DriveTo makes from the way */
+    UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "10.0", Units = "cm"))
+    float DriveSplineSpacing;
 };

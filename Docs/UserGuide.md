@@ -484,3 +484,7 @@ The editor console command `NsVehicle.Reach` runs the reach tool. The runtime ha
 - The custom inputs go to the server only.
 - The modules are fixed. You cannot remove a module or replace it with a subclass.
 - There is no clutch simulation.
+
+### Keep a parked vehicle on a slope
+
+Set `RestFrictionSlopeDegrees` on the brake module, and turn off the idle lock. With no input and at a low speed, the module applies static friction. The vehicle stays on a slope up to this angle. On a steeper slope the force reaches its limit and the vehicle rolls, as a real one does.

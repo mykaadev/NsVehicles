@@ -59,6 +59,9 @@ public:
     /** Returns the brake force in N for the arcade powertrain. It is 0 above the maximum reverse speed */
     float GetArcadeBrakeForce(float SpeedKPH) const;
 
+    /** Static friction for a vehicle with no input at a low speed. It stops the vehicle on a slope up to RestFrictionSlopeDegrees. On a steeper slope the force is too small, so the vehicle rolls */
+    void ApplyRestFriction(UPrimitiveComponent* PhysicsBody, const FVector& Up, const FVector& WorldVelocity, bool bHasInput, bool bInAir, float DeltaTime) const;
+
     /** Slows the vehicle with the handbrake force when a handbrake wheel exists and the handbrake input is on */
     void ApplyHandbrake(UPrimitiveComponent* PhysicsBody, const TArray<UNsVehicleSuspensionComponent*>& Suspensions, bool bHandbrakeInput, bool bInAir, const FVector& WorldVelocity, float LocalForwardVelocity);
 
@@ -79,6 +82,14 @@ protected:
     /** The handbrake force in N */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Handbrake")
     float HandbrakeStrength = 7500.f;
+
+    /** The steepest slope where a vehicle with no input stays in place. Zero turns off the static friction */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Rest", meta = (ClampMin = "0.0", ClampMax = "80.0", Units = "deg"))
+    float RestFrictionSlopeDegrees = 0.f;
+
+    /** The speed under which the static friction applies, in cm/s */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Rest", meta = (ClampMin = "0.0"))
+    float RestFrictionMaxSpeed = 80.f;
 
 private:
     /** The brake force from Begin Play that SetBrakesEnabled restores */

@@ -375,6 +375,8 @@ void ANsVehicle::UpdatePhysicsCore(float DeltaTime)
     UpdateMotionState(DeltaTime);
 
     const FVector WorldVelocity = UAsyncTickFunctions::ATP_GetLinearVelocity(PrimitiveComponent);
+    const bool bHasDriveInput = !FMath::IsNearlyZero(Controls->GetThrottleInput()) || !FMath::IsNearlyZero(Controls->GetBrakesInput());
+    Brakes->ApplyRestFriction(PrimitiveComponent, Up, WorldVelocity, bHasDriveInput, bInAir, DeltaTime);
     Brakes->ApplyHandbrake(PrimitiveComponent, SuspensionComponents, Controls->GetHandbrakeInput(), bInAir, WorldVelocity, LocalVelocity.X);
     AirControl->ApplyAirControl(PrimitiveComponent, Forward, Right, Up, SuspensionComponents, InAirWheelCount, Controls->GetAirPitchInput(), Controls->GetAirYawInput(), Controls->GetAirRollInput());
     AntiGravity->ApplyAntiGravity(PrimitiveComponent, PhysicsTransform, bInAir, AsyncDeltaTime);

@@ -74,6 +74,25 @@ float UNsVehicleBrakeComponent::GetArcadeBrakeForce(const float SpeedKPH) const
     return SpeedKPH < -MaxSpeedInReverse ? 0.f : BrakeForce;
 }
 
+void UNsVehicleBrakeComponent::ApplyRestFriction(UPrimitiveComponent* const PhysicsBody, const FVector& Up, const FVector& WorldVelocity, const bool bHasInput, const bool bInAir, const float DeltaTime) const
+{
+    if (RestFrictionSlopeDegrees <= 0.f || bHasInput || bInAir || DeltaTime <= UE_SMALL_NUMBER || WorldVelocity.SizeSquared() > FMath::Square(RestFrictionMaxSpeed))
+    {
+        return;
+    }
+
+    // The acceleration that cancels the motion along the ground and the pull of gravity along the ground
+    const float Gravity = FMath::Abs(GetWorld()->GetGravityZ());
+    const FVector GroundVelocity = FVector::VectorPlaneProject(WorldVelocity, Up);
+    const FVector GroundGravity = FVector::VectorPlaneProject(FVector(0.f, 0.f, -Gravity), Up);
+    const FVector Needed = -(GroundVelocity / DeltaTime + GroundGravity);
+
+    // Static friction has a limit. Over the limit the vehicle moves, as a real one does on a steep slope
+    const float NormalAcceleration = Gravity * FMath::Max(static_cast<float>(Up.Z), 0.f);
+    const float Limit = NormalAcceleration * FMath::Tan(FMath::DegreesToRadians(RestFrictionSlopeDegrees));
+    UAsyncTickFunctions::ATP_AddForce(PhysicsBody, Needed.GetClampedToMaxSize(Limit), true);
+}
+
 void UNsVehicleBrakeComponent::ApplyHandbrake(UPrimitiveComponent* PhysicsBody, const TArray<UNsVehicleSuspensionComponent*>& Suspensions, const bool bHandbrakeInput, const bool bInAir, const FVector& WorldVelocity, const float LocalForwardVelocity)
 {
     int32 FrontHandbrakeCount = 0;

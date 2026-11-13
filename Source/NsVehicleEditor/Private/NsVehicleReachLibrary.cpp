@@ -56,7 +56,7 @@ TArray<FVector> UNsVehicleReachLibrary::ComputeReach(const UObject* const WorldC
                 continue;
             }
             FVector Ground;
-            if (!UNsVehiclePathfinder::FindGround(World, Above, Query.TraceHeight + Profile->MaxDropHeight, Query, Ground) || !UNsVehiclePathfinder::CanStep(World, *Profile, From, Ground, Query))
+            if (!UNsVehiclePathfinder::FindGround(World, Above, Query.TraceHeight + Profile->MaxDropHeight, Query, Ground) || !UNsVehiclePathfinder::CanStep(World, *Profile, From, Ground, Query, Cell == Origin))
             {
                 continue;
             }
@@ -131,5 +131,7 @@ FNsVehiclePathQuery UNsVehicleReachLibrary::MakeQuery(const bool bForPath)
     Query.SlopeMargin = bForPath ? Settings->PathSlopeMargin : 1.f;
     Query.SlopeCost = Settings->PathSlopeCost;
     Query.EdgeCost = bForPath ? Settings->PathEdgeCost : 0.f;
+    // The reach tool shows where the vehicle fits, so it needs no free space beside the vehicle
+    Query.Clearance = bForPath ? Settings->PathClearance : 0.f;
     return Query;
 }

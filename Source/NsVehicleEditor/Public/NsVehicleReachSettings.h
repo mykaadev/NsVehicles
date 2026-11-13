@@ -70,4 +70,8 @@ public:
     /** The extra cost of a step beside a drop, a void, or water in the path search. Higher values keep the way away from edges and shores */
     UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "0.0"))
     float PathEdgeCost;
+
+    /** The free space on each side of the vehicle that the path search needs, so the way keeps away from props */
+    UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "0.0", Units = "cm"))
+    float PathClearance;
 };

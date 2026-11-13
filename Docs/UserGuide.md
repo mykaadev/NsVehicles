@@ -204,7 +204,7 @@ The drive mode steers to a point **Look Ahead Distance** ahead on the spline. Af
 2. Call `Start Drive To` with the goal and a **NsVehicle Reach Profile**. It returns false when there is no way.
 3. Bind **On Drive Arrived** and **On Drive Stuck**. Call `Stop Drive` to stop early.
 
-The A* plan tests each step with a box of the profile size, on the collision channel and the responses of the vehicle body. A fence, a prop, or a wall that stops the vehicle also stops the plan. The plan stays away from drops and water when it can (**Edge Cost**), and from steep ground (**Slope Cost**).
+The A* plan tests each step with a box of the profile size plus **Clearance** on each side, on the collision channel and the responses of the vehicle body. A fence, a prop, or a wall that stops the vehicle also stops the plan. The plan ignores the ground, pawns (they move), and triggers with no physics collision. Each step also tests the ground at its middle, so a short steep bump between two grid points stops the plan. A prop with no simple collision is invisible to the plan and to the vehicle, so give every prop simple collision. The plan stays away from drops and water when it can (**Edge Cost**), and from steep ground (**Slope Cost**).
 
 The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
 
@@ -511,10 +511,12 @@ The **Path Query** of Drive To:
 | Trace Height | 300 cm | The height above the ground where the ground trace starts |
 | Trace Channel | WorldStatic | The channel of the ground trace |
 | Water Class Name Filter | WaterBody | An actor whose class name holds this text is water |
-| Slope Margin | 0.8 | The part of the slope limit of the profile that the plan uses |
+| Slope Margin | 0.9 | The part of the slope limit of the profile that the plan uses |
 | Slope Cost | 2 | The extra cost of a climb |
 | Edge Cost | 4 | The extra cost of a step next to a drop, a void, or water |
 | Blocked Radius | 60 cm | The radius around each blocked point that the plan does not cross |
+| Clearance | 10 cm | The free space on each side of the vehicle that a step needs |
+| Wall Angle | 50 deg | A hit surface steeper than this angle is a wall. A flatter surface is ground |
 | NsVehicleStaticWheel | Enabled | true | Spins the wheel |
 | NsVehicleStaticWheel | Invert Direction | false | Inverts the spin |
 | NsVehicleStaticWheel | Rotation Multiplier | 1 | Spin scale |
@@ -533,7 +535,8 @@ Project Settings, NsVehicle Reach:
 | Water Class Name Filter | WaterBody | An actor whose class name holds this text is water |
 | Reached Color, Compare Only Color, Point Size, Draw Seconds | Green, orange, 6, 120 s | The drawing in the editor |
 | Path Slope Cost | 2 | The extra cost of a climb in the path search. At 0 the way is the shortest. Higher values keep the way on gentle ground |
-| Path Slope Margin | 0.8 | The part of the slope limit of the profile that the path search uses. A vehicle stalls at its exact limit on rough ground |
+| Path Slope Margin | 0.9 | The part of the slope limit of the profile that the path search uses. A vehicle stalls at its exact limit on rough ground |
+| Path Clearance | 10 cm | The free space on each side of the vehicle that the path search needs. The reach tool uses 0 |
 | Path Edge Cost | 4 | The extra cost of a step next to a drop, a void, or water in the path search. At 0 the way can follow a cliff edge |
 | Drive Profile | None | The profile of `NsVehicle.DriveTo` when the command names none |
 
@@ -588,6 +591,8 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - The A* plan runs in one frame. A long way on a fine grid can take a second. Plan once, not each tick.
 - The plan knows the slope limit of the profile, not the real grip on each surface. A wet or loose surface can stop the vehicle on a way that the plan accepts. The driver then plans again.
 - The hunt list and the hunt tool are editor only.
+- The 50 cm grid can open or close a passage that is near the width of the vehicle plus the clearance. A start point a few cm away can give a different result.
+- In World Partition, the plan sees only the loaded cells. A plan in the editor world depends on the cells that the editor has loaded.
 
 ### Keep a parked vehicle on a slope
 

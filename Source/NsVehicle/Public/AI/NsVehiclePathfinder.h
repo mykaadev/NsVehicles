@@ -62,6 +62,14 @@ struct NSVEHICLE_API FNsVehiclePathQuery
     /** The radius around each blocked point that the way must not pass */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "0.0", Units = "cm"))
     float BlockedRadius;
+
+    /** The free space on each side of the vehicle that a step needs, so the way keeps away from props and the vehicle does not scrape them in turns */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "0.0", Units = "cm"))
+    float Clearance;
+
+    /** A surface that the step sweep hits counts as a wall when it is steeper than this angle. A flatter surface is ground, which the ground and step tests judge */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "1.0", ClampMax = "89.0", Units = "deg"))
+    float WallAngle;
 };
 
 /**
@@ -89,19 +97,36 @@ public:
     /** True when the ground point is water */
     static bool IsWater(const class UWorld* World, const FVector& Ground, const FNsVehiclePathQuery& Query);
 
-    /** True when the vehicle of the profile can drive from one ground point to the next. The slope limit is the limit of the profile times the slope margin */
-    static bool CanStep(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query);
+    /** True when the vehicle of the profile can drive from one ground point to the next. The slope limit is the limit of the profile times the slope margin. With Allow Start Inside, a wall that the start point already touches does not block */
+    static bool CanStep(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, bool bAllowStartInside = false);
 
 private:
     /** Finds the ground points of a straight line between two ground points at the grid spacing. Returns false when a step fails the tests, crosses a blocked point, or runs beside an edge */
-    static bool TraceStraight(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, TArray<FVector>& OutPoints);
+    static bool TraceStraight(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, bool bAllowStartInside, TArray<FVector>& OutPoints);
 
     /** True when the point is inside the radius of a blocked point of the query */
     static bool IsBlocked(const FVector& Point, const FNsVehiclePathQuery& Query);
+
+    /** True when the vehicle can climb or drop from one ground point to the next: a rise up to the step height, a slope up to the limit times the margin, a drop up to the drop limit */
+    static bool CanClimb(const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query);
+
+    /** Returns the actor of the ground at a ground point, or null */
+    static const class AActor* FindGroundActor(const class UWorld* World, const FVector& Ground, const FNsVehiclePathQuery& Query);
+
+    /** True when a hit actor is the ground under the step, or a terrain tile of the same class next to it */
+    static bool IsGroundActor(const class AActor* Actor, const class AActor* GroundFrom, const class AActor* GroundTo);
 
     /** True when the ground beside a step falls away, or is water. The cost of such a step goes up by the edge cost */
     static bool IsNearEdge(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query);
 
     /** Fills the query params with the vehicle and the ignored actors */
     static void AddIgnored(FCollisionQueryParams& Params, const FNsVehiclePathQuery& Query);
+
+// Variables
+private:
+    /** The number of ground-like parts that one step sweep ignores before the step counts as blocked */
+    static constexpr int32 MaxSweepTries = 8;
+
+    /** The size above which an actor of the ground class counts as a terrain tile, not a prop */
+    static constexpr float TerrainTileSize = 2000.f;
 };

@@ -14,6 +14,7 @@ UNsVehicleReachSettings::UNsVehicleReachSettings()
     PointSize = 6.f;
     DrawSeconds = 120.f;
     PathSlopeCost = 2.f;
-    PathSlopeMargin = 0.8f;
+    PathSlopeMargin = 0.9f;
     PathEdgeCost = 4.f;
+    PathClearance = 10.f;
 }

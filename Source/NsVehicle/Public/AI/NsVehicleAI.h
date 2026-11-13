@@ -256,6 +256,18 @@ private:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
     int32 MaxReplans;
 
+    /** The pitch above which a stall counts as a stall on a slope */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.0", Units = "deg", AllowPrivateAccess = "true"))
+    float SlopeStallPitch;
+
+    /** The part of the slope limit that each stall on a slope takes from the plans of the current Drive To */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.0", ClampMax = "0.5", AllowPrivateAccess = "true"))
+    float SlopeMarginStep;
+
+    /** The lowest slope margin that the stalls on slopes can give */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.1", ClampMax = "1.0", AllowPrivateAccess = "true"))
+    float MinSlopeMargin;
+
     /** The gain along the spline that counts as progress and resets the stall count */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "1.0", Units = "cm", AllowPrivateAccess = "true"))
     float ProgressDistance;
@@ -320,6 +332,12 @@ private:
     /** The profile of Drive To */
     UPROPERTY(Transient)
     TObjectPtr<const class UNsVehicleReachProfile> DriveProfile;
+
+    /** The slope margin of the path query before the stalls on slopes lowered it */
+    float BaseSlopeMargin = 1.f;
+
+    /** True while the stalls on slopes have lowered the slope margin of the current Drive To */
+    bool bSlopeMarginLowered = false;
 
     /** The steering input of Drive To from the last tick */
     float SteeringOutput = 0.f;

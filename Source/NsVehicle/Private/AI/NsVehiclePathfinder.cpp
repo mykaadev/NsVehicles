@@ -333,7 +333,8 @@ bool UNsVehiclePathfinder::TestStep(const UWorld* const World, const UNsVehicleR
     const FVector Lift(0.f, 0.f, Profile.MaxStepHeight + HalfHeight + 1.f);
     const FVector Direction = (To - From).GetSafeNormal2D();
     const FQuat Rotation = Direction.IsNearlyZero() ? FQuat::Identity : Direction.Rotation().Quaternion();
-    const FCollisionShape Box = FCollisionShape::MakeBox(FVector(1.f, Profile.HalfWidth + Query.Clearance, FMath::Max(HalfHeight - Profile.MaxStepHeight * 0.5f, 1.f)));
+    // The box starts just above the step height, so an object that the wheels cannot climb, for example a low root, stops the step. The sweep ignores the ground itself
+    const FCollisionShape Box = FCollisionShape::MakeBox(FVector(1.f, Profile.HalfWidth + Query.Clearance, HalfHeight + 0.5f));
     FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehiclePathSweep), false);
     AddIgnored(Params, Query);
     const UPrimitiveComponent* const Body = Query.Vehicle != nullptr ? Cast<UPrimitiveComponent>(Query.Vehicle->GetRootComponent()) : nullptr;
@@ -405,14 +406,18 @@ bool UNsVehiclePathfinder::IsGroundActor(const AActor* const Actor, const AActor
 
 bool UNsVehiclePathfinder::IsNearEdge(const UWorld* const World, const UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query)
 {
-    // The ground one grid step to each side of the target point. A void, a drop deeper than half the drop limit, or water marks an edge
-    const FVector Side = FVector::CrossProduct((To - From).GetSafeNormal2D(), FVector::UpVector) * (Profile.HalfWidth + Query.GridSpacing);
+    // The ground one grid step to each side of the target point. A void, a drop deeper than half the drop limit, water, or a bank steeper than the slope limit marks an edge
+    // A wheel that runs along the foot of a steep bank rides up it and tips the vehicle
+    const float SideDistance = Profile.HalfWidth + Query.GridSpacing;
+    const float BankRise = Profile.MaxStepHeight + SideDistance * FMath::Tan(FMath::DegreesToRadians(Profile.MaxSlopeDegrees * Query.SlopeMargin));
+    const FVector Side = FVector::CrossProduct((To - From).GetSafeNormal2D(), FVector::UpVector) * SideDistance;
     for (const float Sign : { 1.f, -1.f })
     {
         const FVector Point = To + Side * Sign;
         FVector Ground;
         if (!FindGround(World, Point + FVector(0.f, 0.f, Query.TraceHeight), Query.TraceHeight + Profile.MaxDropHeight, Query, Ground)
             || Ground.Z < To.Z - Profile.MaxDropHeight * 0.5f
+            || Ground.Z > To.Z + BankRise
             || (!Profile.bCrossesWater && IsWater(World, Ground, Query)))
         {
             return true;

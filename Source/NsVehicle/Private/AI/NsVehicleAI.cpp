@@ -39,6 +39,9 @@ UNsVehicleAI::UNsVehicleAI()
     MaxSmoothSkip = 12;
     SharpTurnAngle = 60.f;
     MaxReplans = 6;
+    SlopeStallPitch = 10.f;
+    SlopeMarginStep = 0.05f;
+    MinSlopeMargin = 0.7f;
 }
 
 void UNsVehicleAI::BeginPlay()
@@ -281,6 +284,18 @@ void UNsVehicleAI::TickWaypoints(const float DeltaTime)
         }
         // The next plan avoids the place just ahead of the stall
         PathQuery.BlockedPoints.Add(Location + OwnerActor->GetActorForwardVector() * WaypointLookAhead);
+
+        // A stall on a slope means that the owner cannot climb what the plan allowed here, so the next plans use less of the slope limit
+        if (FMath::Abs(OwnerActor->GetActorRotation().Pitch) > SlopeStallPitch && PathQuery.SlopeMargin > MinSlopeMargin)
+        {
+            if (!bSlopeMarginLowered)
+            {
+                BaseSlopeMargin = PathQuery.SlopeMargin;
+                bSlopeMarginLowered = true;
+            }
+            PathQuery.SlopeMargin = FMath::Max(PathQuery.SlopeMargin - SlopeMarginStep, MinSlopeMargin);
+            UE_LOG(LogNsVehicleAI, Display, TEXT("Drive To of %s stalled on a slope at %s, pitch %.0f deg. The next plans use a slope margin of %.2f"), *GetNameSafe(GetOwner()), *Location.ToString(), FMath::Abs(OwnerActor->GetActorRotation().Pitch), PathQuery.SlopeMargin);
+        }
         ReverseTimer = ReverseSeconds;
         bReplanAfterReverse = true;
         return;
@@ -312,6 +327,11 @@ void UNsVehicleAI::StopDrive()
 {
     bDriving = false;
     ReverseTimer = 0.f;
+    if (bSlopeMarginLowered)
+    {
+        PathQuery.SlopeMargin = BaseSlopeMargin;
+        bSlopeMarginLowered = false;
+    }
     if (UNsVehicleControlsComponent* const Controls = GetControls())
     {
         Controls->SetThrottleInput(0.f);

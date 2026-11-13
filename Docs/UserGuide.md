@@ -206,7 +206,7 @@ The drive mode steers to a point **Look Ahead Distance** ahead on the spline. Af
 
 The A* plan tests each step with a box of the profile size plus **Clearance** on each side, on the collision channel and the responses of the vehicle body. A fence, a prop, or a wall that stops the vehicle also stops the plan. The plan ignores the ground, pawns (they move), and triggers with no physics collision. Each step also tests the ground at its middle, so a short steep bump between two grid points stops the plan. A prop with no simple collision is invisible to the plan and to the vehicle, so give every prop simple collision. The plan stays away from drops and water when it can (**Edge Cost**), and from steep ground (**Slope Cost**).
 
-The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
+The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After a stall on a slope, the next plans use less of the slope limit, because the vehicle could not climb what the plan allowed. The next drive starts with the full margin again. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
 
 From C++ or Python, call `UNsVehiclePathfinder::FindPath` to get the ground points of a way without a drive. Call `UNsVehiclePathfinder::SmoothPath` on the result for a way with fewer turns.
 
@@ -503,6 +503,9 @@ With **Use With Drivetrain** on:
 | NsVehicleAI | Max Smooth Skip | 12 | Grid points that one straight part of the smoothed way can replace |
 | NsVehicleAI | Waypoint Arrive Distance | 40 cm | Distance to the goal at which Drive To stops |
 | NsVehicleAI | Max Replans | 6 | New plans after stalls before Drive To gives up |
+| NsVehicleAI | Slope Stall Pitch | 10 deg | Pitch above which a stall counts as a stall on a slope |
+| NsVehicleAI | Slope Margin Step | 0.05 | Part of the slope limit that each stall on a slope takes from the next plans of the same drive |
+| NsVehicleAI | Min Slope Margin | 0.7 | Lowest slope margin that stalls on slopes can give |
 
 The **Path Query** of Drive To:
 
@@ -515,7 +518,7 @@ The **Path Query** of Drive To:
 | Water Class Name Filter | WaterBody | An actor whose class name holds this text is water |
 | Slope Margin | 0.9 | The part of the slope limit of the profile that the plan uses |
 | Slope Cost | 2 | The extra cost of a climb |
-| Edge Cost | 4 | The extra cost of a step next to a drop, a void, or water |
+| Edge Cost | 4 | The extra cost of a step next to a drop, a void, water, or a bank steeper than the slope limit |
 | Blocked Radius | 60 cm | The radius around each blocked point that the plan does not cross |
 | Clearance | 10 cm | The free space on each side of the vehicle that a step needs |
 | Wall Angle | 50 deg | A hit surface steeper than this angle is a wall. A flatter surface is ground |

@@ -3,7 +3,6 @@
 #include "NsVehicleEditorModule.h"
 
 #include "AI/NsVehicleAI.h"
-#include "Components/SplineComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Editor.h"
 #include "Engine/Engine.h"
@@ -11,14 +10,17 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Modules/ModuleManager.h"
+#include "UObject/StrongObjectPtr.h"
+#include "NsVehicleHuntList.h"
+#include "NsVehicleHuntRunner.h"
 #include "NsVehicleReachLibrary.h"
-#include "NsVehicleReachProfile.h"
+#include "AI/NsVehicleReachProfile.h"
 #include "NsVehicleReachSettings.h"
 #include "Vehicle/NsVehicle.h"
 
 DEFINE_LOG_CATEGORY(LogNsVehicleEditor);
 
-TWeakObjectPtr<AActor> FNsVehicleEditorModule::DriveSplineActor;
+TStrongObjectPtr<UNsVehicleHuntRunner> FNsVehicleEditorModule::HuntRunner;
 
 void FNsVehicleEditorModule::StartupModule()
 {
@@ -37,11 +39,21 @@ void FNsVehicleEditorModule::StartupModule()
         TEXT("Stops the drive of NsVehicle.DriveTo"),
         FConsoleCommandWithArgsDelegate::CreateStatic(&FNsVehicleEditorModule::RunDriveStopCommand),
         ECVF_Default);
+    HuntCommand = IConsoleManager::Get().RegisterConsoleCommand(
+        TEXT("NsVehicle.Hunt"),
+        TEXT("In Play In Editor, drives the player vehicle to each target of a hunt list and writes a report of weird spots. Usage: NsVehicle.Hunt /Game/Path/HuntList"),
+        FConsoleCommandWithArgsDelegate::CreateStatic(&FNsVehicleEditorModule::RunHuntCommand),
+        ECVF_Default);
+    HuntStopCommand = IConsoleManager::Get().RegisterConsoleCommand(
+        TEXT("NsVehicle.HuntStop"),
+        TEXT("Stops the hunt and writes the report of the drives so far"),
+        FConsoleCommandWithArgsDelegate::CreateStatic(&FNsVehicleEditorModule::RunHuntStopCommand),
+        ECVF_Default);
 }
 
 void FNsVehicleEditorModule::ShutdownModule()
 {
-    for (IConsoleObject** Command : { &ReachCommand, &DriveToCommand, &DriveStopCommand })
+    for (IConsoleObject** Command : { &ReachCommand, &DriveToCommand, &DriveStopCommand, &HuntCommand, &HuntStopCommand })
     {
         if (*Command != nullptr)
         {
@@ -98,58 +110,35 @@ void FNsVehicleEditorModule::RunDriveToCommand(const TArray<FString>& Args)
     }
 
     const FVector Goal(FCString::Atof(*Args[0]), FCString::Atof(*Args[1]), FCString::Atof(*Args[2]));
-    // The traces start inside the vehicle, so they ignore it and the actors on it, for example the driver
-    TArray<AActor*> Ignored;
-    Vehicle->GetAttachedActors(Ignored, false, true);
-    Ignored.Add(Vehicle);
-    const TArray<FVector> Path = UNsVehicleReachLibrary::FindPath(World, Vehicle->GetActorLocation(), Goal, Profile, Ignored);
-    if (Path.Num() < 2)
+    UNsVehicleAI* const AI = FindOrAddAI(Vehicle);
+    AI->SetDrawDebug(true);
+    AI->SetPathQuery(UNsVehicleReachLibrary::MakeQuery(true));
+    if (!AI->StartDriveTo(Goal, Profile))
     {
+        const FString Message = FString::Printf(TEXT("NsVehicle.DriveTo: no way from %s to %s with %s"), *Vehicle->GetActorLocation().ToString(), *Goal.ToString(), *Profile->GetName());
+        UE_LOG(LogNsVehicleEditor, Warning, TEXT("%s"), *Message);
+        if (GEngine != nullptr)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, Settings->DrawSeconds, FColor::Red, Message);
+        }
         return;
     }
 
-    RunDriveStopCommand(TArray<FString>());
-
-    // The spline takes a point at each spline spacing, so the steering follows the way and not each grid cell
-    AActor* const SplineActor = World->SpawnActor<AActor>();
-    USplineComponent* const Spline = NewObject<USplineComponent>(SplineActor);
-    SplineActor->SetRootComponent(Spline);
-    Spline->RegisterComponent();
-    Spline->ClearSplinePoints(false);
-    FVector Last = Path[0];
-    Spline->AddSplinePoint(Last, ESplineCoordinateSpace::World, false);
-    for (int32 Index = 1; Index < Path.Num(); ++Index)
-    {
-        if (Index == Path.Num() - 1 || FVector::Dist2D(Path[Index], Last) >= Settings->DriveSplineSpacing)
-        {
-            Last = Path[Index];
-            Spline->AddSplinePoint(Last, ESplineCoordinateSpace::World, false);
-        }
-    }
-    Spline->UpdateSpline();
-    DriveSplineActor = SplineActor;
-
-    UNsVehicleAI* AI = Vehicle->FindComponentByClass<UNsVehicleAI>();
-    if (AI == nullptr)
-    {
-        AI = NewObject<UNsVehicleAI>(Vehicle);
-        AI->RegisterComponent();
-    }
-    AI->SetDrawDebug(true);
-    AI->StartDrive(Spline);
-
     // The way shows its climb against the profile: green is easy, yellow is near the slope limit of the profile, red is over it
+    const TArray<FVector>& Path = AI->GetWaypoints();
     float Steepest = 0.f;
+    float Length = 0.f;
     for (int32 Index = 1; Index < Path.Num(); ++Index)
     {
         const float Climb = FMath::RadiansToDegrees(FMath::Atan2(Path[Index].Z - Path[Index - 1].Z, FMath::Max(FVector::Dist2D(Path[Index - 1], Path[Index]), 1.f)));
         const float Part = Climb / FMath::Max(Profile->MaxSlopeDegrees, 1.f);
         const FColor Color = Part > 1.f ? FColor::Red : Part > 0.7f ? FColor::Yellow : Settings->ReachedColor;
         Steepest = FMath::Max(Steepest, Climb);
-        DrawDebugLine(World, Path[Index - 1] + FVector(0.f, 0.f, 5.f), Path[Index] + FVector(0.f, 0.f, 5.f), Color, false, Settings->DrawSeconds, 0, 3.f);
+        Length += FVector::Dist(Path[Index - 1], Path[Index]);
+        DrawDebugLine(World, Path[Index - 1] + FVector(0.f, 0.f, 6.f), Path[Index] + FVector(0.f, 0.f, 6.f), Color, false, Settings->DrawSeconds, 0, 2.f);
     }
     const FString Summary = FString::Printf(TEXT("NsVehicle.DriveTo: %s drives %.0f m to %s with %s. Steepest climb %.0f of %.0f deg"),
-        *Vehicle->GetActorNameOrLabel(), Spline->GetSplineLength() / 100.f, *Goal.ToString(), *Profile->GetName(), Steepest, Profile->MaxSlopeDegrees);
+        *Vehicle->GetActorNameOrLabel(), Length / 100.f, *Goal.ToString(), *Profile->GetName(), Steepest, Profile->MaxSlopeDegrees);
     UE_LOG(LogNsVehicleEditor, Display, TEXT("%s"), *Summary);
     if (GEngine != nullptr)
     {
@@ -159,20 +148,55 @@ void FNsVehicleEditorModule::RunDriveToCommand(const TArray<FString>& Args)
 
 void FNsVehicleEditorModule::RunDriveStopCommand(const TArray<FString>& Args)
 {
-    if (AActor* const SplineActor = DriveSplineActor.Get())
+    UWorld* const World = GEditor != nullptr ? GEditor->PlayWorld.Get() : nullptr;
+    if (World == nullptr)
     {
-        UWorld* const World = SplineActor->GetWorld();
-        for (TActorIterator<ANsVehicle> It(World); It; ++It)
-        {
-            UNsVehicleAI* const AI = It->FindComponentByClass<UNsVehicleAI>();
-            if (AI != nullptr && AI->IsDriving())
-            {
-                AI->StopDrive();
-            }
-        }
-        SplineActor->Destroy();
+        return;
     }
-    DriveSplineActor.Reset();
+    for (TActorIterator<ANsVehicle> It(World); It; ++It)
+    {
+        UNsVehicleAI* const AI = It->FindComponentByClass<UNsVehicleAI>();
+        if (AI != nullptr && AI->IsDriving())
+        {
+            AI->StopDrive();
+        }
+    }
+}
+
+void FNsVehicleEditorModule::RunHuntCommand(const TArray<FString>& Args)
+{
+    UWorld* const World = GEditor != nullptr ? GEditor->PlayWorld.Get() : nullptr;
+    UNsVehicleHuntList* const List = Args.Num() >= 1 ? LoadObject<UNsVehicleHuntList>(nullptr, *Args[0]) : nullptr;
+    if (World == nullptr || List == nullptr)
+    {
+        UE_LOG(LogNsVehicleEditor, Warning, TEXT("NsVehicle.Hunt runs in Play In Editor. Usage: NsVehicle.Hunt /Game/Path/HuntList"));
+        return;
+    }
+    if (HuntRunner.IsValid() && HuntRunner->IsRunning())
+    {
+        HuntRunner->Stop();
+    }
+    HuntRunner.Reset(NewObject<UNsVehicleHuntRunner>());
+    HuntRunner->Start(World, List, FindPlayerVehicle(World));
+}
+
+void FNsVehicleEditorModule::RunHuntStopCommand(const TArray<FString>& Args)
+{
+    if (HuntRunner.IsValid())
+    {
+        HuntRunner->Stop();
+    }
+}
+
+UNsVehicleAI* FNsVehicleEditorModule::FindOrAddAI(ANsVehicle* const Vehicle)
+{
+    UNsVehicleAI* AI = Vehicle->FindComponentByClass<UNsVehicleAI>();
+    if (AI == nullptr)
+    {
+        AI = NewObject<UNsVehicleAI>(Vehicle);
+        AI->RegisterComponent();
+    }
+    return AI;
 }
 
 void FNsVehicleEditorModule::RunReachCommand(const TArray<FString>& Args)

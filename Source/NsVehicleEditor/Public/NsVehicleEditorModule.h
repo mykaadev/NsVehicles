@@ -4,10 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
+#include "UObject/StrongObjectPtr.h"
 
 NSVEHICLEEDITOR_API DECLARE_LOG_CATEGORY_EXTERN(LogNsVehicleEditor, Log, All);
 
-/** The editor module of NsVehicles. It holds the reach tool, the drive-to tool, and their console commands */
+/** The editor module of NsVehicles. It holds the reach tool, the drive-to tool, the hunt, and their console commands */
 class FNsVehicleEditorModule : public IModuleInterface
 {
 // Functions
@@ -24,11 +25,20 @@ private:
     /** Drives the vehicle of the player in Play In Editor to a point on a way that the path search finds: NsVehicle.DriveTo X Y Z [ProfilePath] */
     static void RunDriveToCommand(const TArray<FString>& Args);
 
-    /** Stops the drive of NsVehicle.DriveTo and removes its spline */
+    /** Stops the drive of NsVehicle.DriveTo */
     static void RunDriveStopCommand(const TArray<FString>& Args);
 
     /** Returns the vehicle of the first player in Play In Editor: the pawn, or the vehicle nearest to the pawn */
     static class ANsVehicle* FindPlayerVehicle(class UWorld* World);
+
+    /** Returns the AI component of a vehicle, and adds one when it has none */
+    static class UNsVehicleAI* FindOrAddAI(class ANsVehicle* Vehicle);
+
+    /** Starts a hunt for weird spots in Play In Editor: NsVehicle.Hunt HuntListPath */
+    static void RunHuntCommand(const TArray<FString>& Args);
+
+    /** Stops the hunt and writes its report */
+    static void RunHuntStopCommand(const TArray<FString>& Args);
 
 // Variables
 private:
@@ -41,6 +51,12 @@ private:
     /** The console command that stops the drive */
     class IConsoleObject* DriveStopCommand = nullptr;
 
-    /** The actor that holds the spline of the current drive */
-    static TWeakObjectPtr<class AActor> DriveSplineActor;
+    /** The console command that starts a hunt */
+    class IConsoleObject* HuntCommand = nullptr;
+
+    /** The console command that stops a hunt */
+    class IConsoleObject* HuntStopCommand = nullptr;
+
+    /** The runner of the current hunt */
+    static TStrongObjectPtr<class UNsVehicleHuntRunner> HuntRunner;
 };

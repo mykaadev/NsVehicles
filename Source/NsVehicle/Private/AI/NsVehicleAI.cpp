@@ -1,6 +1,8 @@
 // Copyright (C) 2025 nulled.softworks. All rights reserved.
 
 #include "AI/NsVehicleAI.h"
+#include "AI/NsVehicleReachProfile.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/Engine.h"
 #include "Modules/Control/NsVehicleControlsComponent.h"
@@ -24,6 +26,19 @@ UNsVehicleAI::UNsVehicleAI()
     NoProgressSeconds = 6.f;
     NoProgressSpeed = 30.f;
     ProgressDistance = 100.f;
+    WaypointLookAhead = 60.f;
+    WaypointArriveDistance = 40.f;
+    LookAheadTime = 0.35f;
+    SteerDamping = 0.12f;
+    SteerRate = 3.f;
+    MaxDriveSpeed = 300.f;
+    CornerSpeed = 100.f;
+    CornerLookAhead = 250.f;
+    SpeedBand = 120.f;
+    CruiseThrottle = 0.3f;
+    MaxSmoothSkip = 12;
+    SharpTurnAngle = 60.f;
+    MaxReplans = 6;
 }
 
 void UNsVehicleAI::BeginPlay()
@@ -39,7 +54,11 @@ void UNsVehicleAI::TickComponent(float DeltaTime, ELevelTick TickType, FActorCom
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-    if (bDriving)
+    if (bDriving && bWaypointMode)
+    {
+        TickWaypoints(DeltaTime);
+    }
+    else if (bDriving)
     {
         TickDrive(DeltaTime);
     }
@@ -54,6 +73,7 @@ void UNsVehicleAI::StartDrive(USplineComponent* const InSplineComponent)
     }
 
     SetTargetSpline(InSplineComponent);
+    bWaypointMode = false;
     bDriving = true;
     StallTimer = 0.f;
     ReverseTimer = 0.f;
@@ -62,9 +82,236 @@ void UNsVehicleAI::StartDrive(USplineComponent* const InSplineComponent)
     NoProgressTimer = 0.f;
 }
 
+bool UNsVehicleAI::StartDriveTo(const FVector Goal, const UNsVehicleReachProfile* const Profile)
+{
+    if (Profile == nullptr || GetControls() == nullptr || GetOwner() == nullptr)
+    {
+        UE_LOG(LogNsVehicleAI, Error, TEXT("StartDriveTo on %s needs a profile and a controls component on the owner"), *GetNameSafe(GetOwner()));
+        return false;
+    }
+
+    OwnerActor = GetOwner();
+    World = GetWorld();
+    DriveGoal = Goal;
+    DriveProfile = Profile;
+    Replans = 0;
+    LastStuckCause.Reset();
+    PathQuery.BlockedPoints.Reset();
+    if (!PlanWaypoints(OwnerActor->GetActorLocation()))
+    {
+        LastStuckLocation = OwnerActor->GetActorLocation();
+        LastStuckCause = TEXT("no way to the goal");
+        return false;
+    }
+
+    bWaypointMode = true;
+    bDriving = true;
+    StallTimer = 0.f;
+    ReverseTimer = 0.f;
+    StallRetries = 0;
+    NoProgressTimer = 0.f;
+    bReplanAfterReverse = false;
+    SteeringOutput = 0.f;
+    return true;
+}
+
+bool UNsVehicleAI::PlanWaypoints(const FVector& From)
+{
+    // The plan ignores the owner and the actors on it, for example the driver, and its sweeps use the collision of the owner
+    PathQuery.Vehicle = OwnerActor;
+    TArray<AActor*> Attached;
+    OwnerActor->GetAttachedActors(Attached, true, true);
+    PathQuery.IgnoredActors.Reset();
+    for (AActor* const Actor : Attached)
+    {
+        PathQuery.IgnoredActors.Add(Actor);
+    }
+
+    const TArray<FVector> Path = UNsVehiclePathfinder::FindPath(OwnerActor, From, DriveGoal, DriveProfile, PathQuery);
+    if (Path.Num() < 2)
+    {
+        return false;
+    }
+
+    Waypoints = UNsVehiclePathfinder::SmoothPath(OwnerActor, Path, DriveProfile, PathQuery, MaxSmoothSkip);
+    WaypointDistances.Reset(Waypoints.Num());
+    WaypointDistances.Add(0.f);
+    for (int32 Index = 1; Index < Waypoints.Num(); ++Index)
+    {
+        WaypointDistances.Add(WaypointDistances.Last() + FVector::Dist(Waypoints[Index - 1], Waypoints[Index]));
+    }
+    WaypointProgress = 0.f;
+    BestDistance = 0.f;
+    return true;
+}
+
+float UNsVehicleAI::ProjectOnWaypoints(const FVector& Location) const
+{
+    // The search stays near the current progress, so a way that loops back near itself does not make the progress jump
+    float BestProgress = WaypointProgress;
+    float BestDistanceSquared = TNumericLimits<float>::Max();
+    for (int32 Index = 1; Index < Waypoints.Num(); ++Index)
+    {
+        if (WaypointDistances[Index] < WaypointProgress - WaypointLookAhead || WaypointDistances[Index - 1] > WaypointProgress + WaypointLookAhead * 4.f)
+        {
+            continue;
+        }
+        const FVector Closest = FMath::ClosestPointOnSegment(Location, Waypoints[Index - 1], Waypoints[Index]);
+        const float DistanceSquared = FVector::DistSquared2D(Location, Closest);
+        if (DistanceSquared < BestDistanceSquared)
+        {
+            BestDistanceSquared = DistanceSquared;
+            BestProgress = WaypointDistances[Index - 1] + FVector::Dist(Waypoints[Index - 1], Closest);
+        }
+    }
+    return BestProgress;
+}
+
+FVector UNsVehicleAI::GetWaypointPointAt(const float Distance) const
+{
+    for (int32 Index = 1; Index < Waypoints.Num(); ++Index)
+    {
+        if (WaypointDistances[Index] >= Distance)
+        {
+            const float Segment = FMath::Max(WaypointDistances[Index] - WaypointDistances[Index - 1], 0.01f);
+            return FMath::Lerp(Waypoints[Index - 1], Waypoints[Index], (Distance - WaypointDistances[Index - 1]) / Segment);
+        }
+    }
+    return Waypoints.Last();
+}
+
+float UNsVehicleAI::GetTurnAhead(const float Distance) const
+{
+    // The heading change between the first half and the second half of the look-ahead
+    const FVector A = GetWaypointPointAt(Distance);
+    const FVector B = GetWaypointPointAt(Distance + CornerLookAhead * 0.5f);
+    const FVector C = GetWaypointPointAt(Distance + CornerLookAhead);
+    if (FVector::DistSquared2D(A, B) < 1.f || FVector::DistSquared2D(B, C) < 1.f)
+    {
+        return 0.f;
+    }
+    return FMath::Abs(FRotator::NormalizeAxis((C - B).GetSafeNormal2D().Rotation().Yaw - (B - A).GetSafeNormal2D().Rotation().Yaw));
+}
+
+void UNsVehicleAI::TickWaypoints(const float DeltaTime)
+{
+    UNsVehicleControlsComponent* const Controls = GetControls();
+    if (Controls == nullptr || OwnerActor == nullptr || Waypoints.Num() < 2)
+    {
+        UE_LOG(LogNsVehicleAI, Error, TEXT("Drive To of %s lost its waypoints or its controls"), *GetNameSafe(GetOwner()));
+        StopDrive();
+        return;
+    }
+
+    const FVector Location = OwnerActor->GetActorLocation();
+    const float Length = WaypointDistances.Last();
+    if (FVector::Dist2D(Location, Waypoints.Last()) < WaypointArriveDistance)
+    {
+        StopDrive();
+        UE_LOG(LogNsVehicleAI, Display, TEXT("Drive To of %s arrived after %d new plans"), *GetNameSafe(GetOwner()), Replans);
+        ShowDriveState(TEXT("Arrived"), Length, Length, Waypoints.Last(), FColor::Green);
+        OnDriveArrived.Broadcast();
+        return;
+    }
+
+    // The steering point moves ahead with the speed, and the yaw rate damps the steering, so a fast owner does not weave
+    const FVector Velocity = OwnerActor->GetVelocity();
+    const float ForwardSpeed = FVector::DotProduct(Velocity, OwnerActor->GetActorForwardVector());
+    const UPrimitiveComponent* const Body = Cast<UPrimitiveComponent>(OwnerActor->GetRootComponent());
+    const float YawRate = Body != nullptr && Body->IsSimulatingPhysics() ? Body->GetPhysicsAngularVelocityInDegrees().Z : 0.f;
+    WaypointProgress = FMath::Max(WaypointProgress, ProjectOnWaypoints(Location));
+    const float LookAhead = WaypointLookAhead + FMath::Max(ForwardSpeed, 0.f) * LookAheadTime;
+    const FVector Target = GetWaypointPointAt(FMath::Min(WaypointProgress + LookAhead, Length));
+    const float YawError = FRotator::NormalizeAxis((Target - Location).GetSafeNormal2D().Rotation().Yaw - OwnerActor->GetActorRotation().Yaw);
+    const float Steering = FMath::Clamp((YawError - YawRate * SteerDamping) / FullSteerAngle, -1.f, 1.f);
+    SteeringOutput = FMath::FInterpConstantTo(SteeringOutput, Steering, DeltaTime, SteerRate);
+
+#if ENABLE_DRAW_DEBUG
+    if (bDrawDebug)
+    {
+        for (int32 Index = 1; Index < Waypoints.Num(); ++Index)
+        {
+            if (WaypointDistances[Index] > WaypointProgress)
+            {
+                DrawDebugLine(World, Waypoints[Index - 1] + FVector(0.f, 0.f, 5.f), Waypoints[Index] + FVector(0.f, 0.f, 5.f), FColor::Green, false, 0.f, 0, 3.f);
+            }
+        }
+    }
+#endif
+
+    const float Speed = Velocity.Size();
+    NoProgressTimer = Speed < NoProgressSpeed ? NoProgressTimer + DeltaTime : 0.f;
+    if (WaypointProgress > BestDistance + ProgressDistance)
+    {
+        BestDistance = WaypointProgress;
+        StallRetries = 0;
+        NoProgressTimer = 0.f;
+    }
+
+    if (ReverseTimer > 0.f)
+    {
+        // Backward with the wheels turned the other way. At the end the owner plans again from where it stands, around the place of the stall
+        ReverseTimer -= DeltaTime;
+        Controls->SetThrottleInput(0.f);
+        Controls->SetBrakeInput(1.f);
+        SteeringOutput = -Steering;
+        Controls->SetSteeringInput(SteeringOutput);
+        ShowDriveState(TEXT("Backing off"), WaypointProgress, Length, Target, FColor::Orange);
+        if (ReverseTimer <= 0.f && bReplanAfterReverse)
+        {
+            bReplanAfterReverse = false;
+            if (!PlanWaypoints(Location))
+            {
+                GiveUp(Location, TEXT("no way left around the stalls"), WaypointProgress, Length, Target);
+            }
+        }
+        return;
+    }
+
+    // A vehicle that shakes against a wall keeps some speed, so no progress also counts as a stall
+    StallTimer = Speed < StallSpeed ? StallTimer + DeltaTime : 0.f;
+    if (StallTimer > StallSeconds || NoProgressTimer > NoProgressSeconds)
+    {
+        StallTimer = 0.f;
+        NoProgressTimer = 0.f;
+        if (++Replans > MaxReplans)
+        {
+            GiveUp(Location, DescribeBlocker(), WaypointProgress, Length, Target);
+            return;
+        }
+        // The next plan avoids the place just ahead of the stall
+        PathQuery.BlockedPoints.Add(Location + OwnerActor->GetActorForwardVector() * WaypointLookAhead);
+        ReverseTimer = ReverseSeconds;
+        bReplanAfterReverse = true;
+        return;
+    }
+
+    // The target speed drops before a turn and near the goal. Under it the throttle rises, and well over it the brake slows the owner
+    const float TurnPart = FMath::Clamp(FMath::Max(GetTurnAhead(WaypointProgress), FMath::Abs(YawError)) / SharpTurnAngle, 0.f, 1.f);
+    const float TargetSpeed = FMath::Min(FMath::Lerp(MaxDriveSpeed, CornerSpeed, TurnPart), CornerSpeed + (Length - WaypointProgress));
+    const float SpeedError = TargetSpeed - ForwardSpeed;
+    const bool bBrake = ForwardSpeed > TargetSpeed + SpeedBand * 0.5f;
+    Controls->ApplyHandbrakeInput(false);
+    Controls->SetBrakeInput(bBrake ? FMath::Clamp(-SpeedError / SpeedBand, 0.f, 1.f) : 0.f);
+    Controls->SetThrottleInput(bBrake ? 0.f : DriveThrottle * FMath::Clamp(CruiseThrottle + SpeedError / SpeedBand, 0.f, 1.f));
+    Controls->SetSteeringInput(SteeringOutput);
+    ShowDriveState(TEXT("Driving"), WaypointProgress, Length, Target, FColor::Yellow);
+}
+
+void UNsVehicleAI::GiveUp(const FVector& Location, const FString& Cause, const float Distance, const float Length, const FVector& Target)
+{
+    StopDrive();
+    LastStuckLocation = Location;
+    LastStuckCause = Cause;
+    UE_LOG(LogNsVehicleAI, Warning, TEXT("The drive mode of %s is stuck at %s: %s"), *GetNameSafe(GetOwner()), *Location.ToString(), *Cause);
+    ShowDriveState(FString::Printf(TEXT("Stuck: %s"), *Cause), Distance, Length, Target, FColor::Red);
+    OnDriveStuck.Broadcast();
+}
+
 void UNsVehicleAI::StopDrive()
 {
     bDriving = false;
+    ReverseTimer = 0.f;
     if (UNsVehicleControlsComponent* const Controls = GetControls())
     {
         Controls->SetThrottleInput(0.f);
@@ -130,11 +377,7 @@ void UNsVehicleAI::TickDrive(const float DeltaTime)
         NoProgressTimer = 0.f;
         if (++StallRetries > MaxStallRetries)
         {
-            StopDrive();
-            const FString Blocker = DescribeBlocker();
-            UE_LOG(LogNsVehicleAI, Warning, TEXT("The drive mode of %s is stuck at %s: %s"), *GetNameSafe(GetOwner()), *Location.ToString(), *Blocker);
-            ShowDriveState(FString::Printf(TEXT("Stuck: %s"), *Blocker), Distance, Length, Target, FColor::Red);
-            OnDriveStuck.Broadcast();
+            GiveUp(Location, DescribeBlocker(), Distance, Length, Target);
             return;
         }
         ReverseTimer = ReverseSeconds;
@@ -173,9 +416,10 @@ void UNsVehicleAI::ShowDriveState(const FString& State, const float Distance, co
     {
         return;
     }
-    const FString Text = FString::Printf(TEXT("%s: %s | %.1f of %.1f m | %.0f cm/s | pitch %.0f deg | stalls %d of %d"),
+    const FString Tries = bWaypointMode ? FString::Printf(TEXT("plans %d of %d"), Replans, MaxReplans) : FString::Printf(TEXT("stalls %d of %d"), StallRetries, MaxStallRetries);
+    const FString Text = FString::Printf(TEXT("%s: %s | %.1f of %.1f m | %.0f cm/s | pitch %.0f deg | %s"),
         *OwnerActor->GetActorNameOrLabel(), *State, Distance / 100.f, Length / 100.f, OwnerActor->GetVelocity().Size(),
-        OwnerActor->GetActorRotation().Pitch, StallRetries, MaxStallRetries);
+        OwnerActor->GetActorRotation().Pitch, *Tries);
     // One message line for each component: the key is the unique id, and a final state stays on screen longer
     const bool bFinal = State.StartsWith(TEXT("Stuck")) || State == TEXT("Arrived");
     GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()), bFinal ? 30.f : 0.5f, Color, Text);

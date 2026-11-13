@@ -7,11 +7,11 @@
 #include "NsVehicleReachProfile.generated.h"
 
 /**
- * What one vehicle setup can drive over, for the reach tool. Make one profile for each wheel setup, for example standard tires and big tires
- * The reach tool reads the profile and paints the ground that the vehicle reaches from a start point
+ * What one vehicle setup can drive over. Make one profile for each wheel setup, for example standard tires and big tires
+ * The reach tool paints the ground that the vehicle reaches from a start point, and the path search of the AI driver finds a way with it
  */
 UCLASS(BlueprintType)
-class NSVEHICLEEDITOR_API UNsVehicleReachProfile : public UDataAsset
+class NSVEHICLE_API UNsVehicleReachProfile : public UDataAsset
 {
     GENERATED_BODY()
 

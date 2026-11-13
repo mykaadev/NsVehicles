@@ -15,5 +15,5 @@ UNsVehicleReachSettings::UNsVehicleReachSettings()
     DrawSeconds = 120.f;
     PathSlopeCost = 2.f;
     PathSlopeMargin = 0.8f;
-    DriveSplineSpacing = 150.f;
+    PathEdgeCost = 4.f;
 }

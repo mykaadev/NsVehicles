@@ -196,18 +196,43 @@ The drive mode of `NsVehicleAI` sets the throttle, the brake, and the steering i
 
 The drive mode steers to a point **Look Ahead Distance** ahead on the spline. After a stall it drives backward for **Reverse Seconds**, then tries again. After **Max Stall Retries** stalls with no progress, it stops and broadcasts **On Drive Stuck**. A player input in the same frame overrides it, so do not drive while the drive mode runs.
 
+### Drive to a point with A* (Drive To)
+
+`StartDriveTo` of `NsVehicleAI` plans a way to a goal with A* for a reach profile, then drives it with no spline. The plan and the drive are runtime code, so a packaged game can use them too.
+
+1. Add an `NsVehicleAI` component to the vehicle.
+2. Call `Start Drive To` with the goal and a **NsVehicle Reach Profile**. It returns false when there is no way.
+3. Bind **On Drive Arrived** and **On Drive Stuck**. Call `Stop Drive` to stop early.
+
+The A* plan tests each step with a box of the profile size, on the collision channel and the responses of the vehicle body. A fence, a prop, or a wall that stops the vehicle also stops the plan. The plan stays away from drops and water when it can (**Edge Cost**), and from steep ground (**Slope Cost**).
+
+The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
+
+From C++ or Python, call `UNsVehiclePathfinder::FindPath` to get the ground points of a way without a drive. Call `UNsVehiclePathfinder::SmoothPath` on the result for a way with fewer turns.
+
 ### Drive to a point in a play test (drive-to tool)
 
-The editor module finds a way that a reach profile can drive, with A* on the reach grid, and drives the player vehicle along it. Use it to play test a route with a wheel setup, without driving by hand. It is editor only.
+The editor command drives the player vehicle with Drive To. Use it to play test a route with a wheel setup, without driving by hand.
 
 1. Set **Drive Profile** in Project Settings, NsVehicle Reach, or pass a profile in the command.
 2. Start Play In Editor.
-3. In the console, run `NsVehicle.DriveTo X Y Z [/Game/Path/Profile]`. The way draws in green, and the vehicle drives it.
+3. In the console, run `NsVehicle.DriveTo X Y Z [/Game/Path/Profile]`. The way draws on the ground, and the vehicle drives it.
 4. Run `NsVehicle.DriveStop` to stop.
 
-The vehicle is the pawn of the first player, or the vehicle nearest to that pawn. From C++ or Python, call `UNsVehicleReachLibrary::FindPath` to get the ground points of the way without a drive. Pass the vehicle in **Ignored Actors** when the search starts inside it.
+The vehicle is the pawn of the first player, or the vehicle nearest to that pawn. The command uses the path settings of Project Settings, NsVehicle Reach.
 
-While the vehicle drives, the screen shows one line: the state, the progress, the speed, the pitch, and the stall count. The way is green where it is easy, yellow near the slope limit, and red over it. When the vehicle gets stuck, the line says why: "blocked by" an actor means that the way leads into an object, and "cannot climb" means that the ground is too steep for the wheels.
+While the vehicle drives, the screen shows one line: the state, the progress, the number of plans, the speed, the pitch, and the stall count. The way is green where it is easy, yellow near the slope limit, and red over it. A new plan draws a new way.
+
+### Hunt for weird spots (hunt tool)
+
+The hunt drives the player vehicle to a list of places, one after the other, and writes a report. Use it to find the places that a player can reach and must not, and the places that a player cannot reach and must.
+
+1. Make a **NsVehicle Hunt List** data asset. Set the profile, the targets, and the no-go zones. A no-go zone is a box that the vehicle must not enter.
+2. Start Play In Editor.
+3. In the console, run `NsVehicle.Hunt /Game/Path/HuntList`. Run `NsVehicle.HuntStop` to stop early.
+4. Read the report in `Saved/NsVehicle/Hunt_<date>.md`. It lists each target with the result (arrived, stuck, no way, or timeout), the time, the new plans, the end place, and the cause. It also lists each entry into a no-go zone.
+
+Each drive starts where the last one ended. **Target Time Limit** stops a drive that takes too long.
 
 ### Ignore some surfaces
 
@@ -462,6 +487,34 @@ With **Use With Drivetrain** on:
 | NsVehicleAI | No Progress Seconds | 6 s | Time with no progress along the spline after which a slow vehicle backs off, for example when it shakes against a wall |
 | NsVehicleAI | No Progress Speed | 30 cm/s | Speed under which no progress counts as a stall. A faster vehicle, for example one that drives back to the spline from the side, does not back off |
 | NsVehicleAI | Progress Distance | 100 cm | Gain along the spline that resets the stall count |
+| NsVehicleAI | Path Query | See below | The grid, the traces, and the costs of the A* plan of Drive To |
+| NsVehicleAI | Waypoint Look Ahead | 60 cm | Distance ahead on the way of the steering point of Drive To, at rest |
+| NsVehicleAI | Look Ahead Time | 0.35 s | Time of travel that adds to the steering distance. A fast vehicle steers to a point farther ahead |
+| NsVehicleAI | Steer Damping | 0.12 s | Time of the yaw rate that Drive To takes from the heading error. A higher value turns in more calmly |
+| NsVehicleAI | Steer Rate | 3 | Largest change of the steering input in one second |
+| NsVehicleAI | Max Drive Speed | 300 cm/s | Speed of Drive To on a straight way |
+| NsVehicleAI | Corner Speed | 100 cm/s | Speed of Drive To in a sharp turn and at the goal |
+| NsVehicleAI | Corner Look Ahead | 250 cm | Distance ahead on the way in which Drive To looks for a turn |
+| NsVehicleAI | Sharp Turn Angle | 60 deg | Turn angle ahead at which the target speed is the corner speed |
+| NsVehicleAI | Speed Band | 120 cm/s | Speed error that gives the full throttle or the full brake |
+| NsVehicleAI | Cruise Throttle | 0.3 | Throttle at the target speed |
+| NsVehicleAI | Max Smooth Skip | 12 | Grid points that one straight part of the smoothed way can replace |
+| NsVehicleAI | Waypoint Arrive Distance | 40 cm | Distance to the goal at which Drive To stops |
+| NsVehicleAI | Max Replans | 6 | New plans after stalls before Drive To gives up |
+
+The **Path Query** of Drive To:
+
+| Setting | Default | Effect |
+|---|---|---|
+| Grid Spacing | 50 cm | The distance between two tested points |
+| Max Cells | 400000 | The plan stops at this number of points |
+| Trace Height | 300 cm | The height above the ground where the ground trace starts |
+| Trace Channel | WorldStatic | The channel of the ground trace |
+| Water Class Name Filter | WaterBody | An actor whose class name holds this text is water |
+| Slope Margin | 0.8 | The part of the slope limit of the profile that the plan uses |
+| Slope Cost | 2 | The extra cost of a climb |
+| Edge Cost | 4 | The extra cost of a step next to a drop, a void, or water |
+| Blocked Radius | 60 cm | The radius around each blocked point that the plan does not cross |
 | NsVehicleStaticWheel | Enabled | true | Spins the wheel |
 | NsVehicleStaticWheel | Invert Direction | false | Inverts the spin |
 | NsVehicleStaticWheel | Rotation Multiplier | 1 | Spin scale |
@@ -481,8 +534,17 @@ Project Settings, NsVehicle Reach:
 | Reached Color, Compare Only Color, Point Size, Draw Seconds | Green, orange, 6, 120 s | The drawing in the editor |
 | Path Slope Cost | 2 | The extra cost of a climb in the path search. At 0 the way is the shortest. Higher values keep the way on gentle ground |
 | Path Slope Margin | 0.8 | The part of the slope limit of the profile that the path search uses. A vehicle stalls at its exact limit on rough ground |
+| Path Edge Cost | 4 | The extra cost of a step next to a drop, a void, or water in the path search. At 0 the way can follow a cliff edge |
 | Drive Profile | None | The profile of `NsVehicle.DriveTo` when the command names none |
-| Drive Spline Spacing | 150 cm | The distance between two points of the spline that `NsVehicle.DriveTo` makes from the way |
+
+The hunt list:
+
+| Setting | Default | Effect |
+|---|---|---|
+| Profile | None | The wheel setup of the hunt |
+| Targets | Empty | The places to drive to, in this order |
+| No Go Zones | Empty | The boxes that the vehicle must not enter |
+| Target Time Limit | 300 s | The time limit of one drive |
 
 ## Debug
 
@@ -491,7 +553,7 @@ Project Settings, NsVehicle Reach:
 - All messages use the log category `LogTemp`. Search the Output Log for `NsVehicle`.
 - To show the state on screen, read `Get Speed KPH`, `Is In Air`, `Get RPM`, `Get Current Gear`, `Is Slipping`, or `Is Idle Locked`.
 
-The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.DriveTo` and `NsVehicle.DriveStop` run the drive-to tool in Play In Editor. The runtime has no console commands and no console variables. The reach tool and the drive-to tool log to `LogNsVehicleEditor`. The drive mode of `NsVehicleAI` logs to `LogNsVehicleAI`: an arrival as Display, and a stuck vehicle as Warning. With **Draw Debug**, the drive mode draws a yellow line to its steering point.
+The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.DriveTo` and `NsVehicle.DriveStop` run the drive-to tool, and `NsVehicle.Hunt` and `NsVehicle.HuntStop` run the hunt tool, in Play In Editor. The runtime has no console commands and no console variables. The editor tools log to `LogNsVehicleEditor`. The A* plan logs to `LogNsVehiclePath`: no way and the cell limit as Warning. The drive mode of `NsVehicleAI` logs to `LogNsVehicleAI`: an arrival as Display, and a stuck vehicle as Warning. With **Draw Debug**, the drive mode draws a yellow line to its steering point and shows its state on screen. The on-screen state is not in Shipping builds.
 
 ## Troubleshooting
 
@@ -522,8 +584,10 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - The custom inputs go to the server only.
 - The modules are fixed. You cannot remove a module or replace it with a subclass.
 - There is no clutch simulation.
-- The path search of the drive-to tool is editor only. A packaged game can use the drive mode of `NsVehicleAI`, but it must make its own spline.
-- The path search tests the same grid as the reach tool. A way that is narrower than the grid spacing can be missed.
+- The A* plan tests the same grid as the reach tool. A way that is narrower than the grid spacing can be missed.
+- The A* plan runs in one frame. A long way on a fine grid can take a second. Plan once, not each tick.
+- The plan knows the slope limit of the profile, not the real grip on each surface. A wet or loose surface can stop the vehicle on a way that the plan accepts. The driver then plans again.
+- The hunt list and the hunt tool are editor only.
 
 ### Keep a parked vehicle on a slope
 

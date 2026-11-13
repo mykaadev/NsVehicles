@@ -7,7 +7,7 @@
 #include "FileHelpers.h"
 #include "NsVehicleEditorModule.h"
 #include "NsVehicleReachLibrary.h"
-#include "NsVehicleReachProfile.h"
+#include "AI/NsVehicleReachProfile.h"
 #include "WorldPartition/LoaderAdapter/LoaderAdapterShape.h"
 #include "WorldPartition/WorldPartition.h"
 #include "WorldPartition/WorldPartitionEditorLoaderAdapter.h"

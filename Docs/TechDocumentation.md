@@ -9,8 +9,10 @@ The descriptor is `NsVehicle.uplugin`. It has three modules. The two runtime mod
 | Module | Type | Loading phase | Content |
 |---|---|---|---|
 | `AsyncTickPhysics` | Runtime | Default | `AAsyncTickPawn`, `UAsyncTickActorComponent`, the Chaos sim callback that calls them, and `UAsyncTickFunctions` for physics thread force and velocity calls |
-| `NsVehicle` | Runtime | Default | The vehicle pawn, the modules, the wheels, the interior parts, the articulated part, and the AI steering and drive mode |
-| `NsVehicleEditor` | Editor | Default | The reach tool: `UNsVehicleReachProfile`, `UNsVehicleReachSettings`, `UNsVehicleReachLibrary`, the `NsVehicle.Reach` console command, and the `NsVehicleReach` commandlet. The drive-to tool: `UNsVehicleReachLibrary::FindPath` and the `NsVehicle.DriveTo` and `NsVehicle.DriveStop` console commands. It depends on `NsVehicle` for the drive-to tool |
+| `NsVehicle` | Runtime | Default | The vehicle pawn, the modules, the wheels, the interior parts, the articulated part, the AI steering and drive mode, the reach profile `UNsVehicleReachProfile`, and the A* plan `UNsVehiclePathfinder` |
+| `NsVehicleEditor` | Editor | Default | The reach tool: `UNsVehicleReachSettings`, `UNsVehicleReachLibrary`, the `NsVehicle.Reach` console command, and the `NsVehicleReach` commandlet. The drive-to tool: the `NsVehicle.DriveTo` and `NsVehicle.DriveStop` console commands. The hunt tool: `UNsVehicleHuntList`, `UNsVehicleHuntRunner`, and the `NsVehicle.Hunt` and `NsVehicle.HuntStop` console commands |
+
+`UNsVehicleReachProfile` moved from `NsVehicleEditor` to `NsVehicle`. `Config/DefaultNsVehicle.ini` holds a class redirect, so the profile assets of a project load with no change.
 
 `AsyncTickPhysics` is bundled in `Source/ThirdParty/AsyncTickPhysics/Source/AsyncTickPhysics/`. It has no descriptor of its own. `NsVehicle.uplugin` lists it.
 
@@ -31,7 +33,7 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 | `Wheels/` | `UNsVehicleSuspensionComponent`, `UNsVehicleStaticWheel`, `UNsVehicleWheel` |
 | `Interior/` | `UNsVehicleInteriorComponent` (abstract) and its six subclasses |
 | `Articulation/` | `UNsVehicleArticulatedComponent` |
-| `AI/` | `UNsVehicleAI` |
+| `AI/` | `UNsVehicleAI`, `UNsVehiclePathfinder` with `FNsVehiclePathQuery`, `UNsVehicleReachProfile` |
 
 ### Main Classes
 
@@ -41,7 +43,11 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 - `UNsVehicleInteriorComponent` is an abstract static mesh component. It maps one vehicle value to a rotation on one axis.
 - `UNsVehicleArticulatedComponent` is a static mesh component that moves on one axis from an input.
 - `UNsVehicleAI` is an actor component. It turns the lateral distance to a spline into a steering value with a PID controller, and the caller sends that value to the Controls module. In the drive mode (`StartDrive`) its tick sets the throttle, the brake, and the steering of the Controls module itself: pure pursuit to a point ahead on the spline, a drive backward after a stall, and the events `OnDriveArrived` and `OnDriveStuck`.
-- `UNsVehicleReachLibrary::FindPath` runs A* on the grid of the reach tool, with the same ground, step, slope, water, and box tests. It searches with a transient copy of the profile whose slope limit is scaled by `PathSlopeMargin`. The step cost is the run times one plus `PathSlopeCost` times the square of the slope against that limit. The heuristic is the straight distance to the goal cell.
+- In Drive To (`StartDriveTo`), `UNsVehicleAI` plans the way with `UNsVehiclePathfinder::FindPath`, smooths it with `SmoothPath`, and follows the ground points with pure pursuit. The steering distance grows with the forward speed. The steering input is the heading error minus the yaw rate times `SteerDamping`, rate limited by `SteerRate`. The target speed falls from `MaxDriveSpeed` to `CornerSpeed` with the turn in the next `CornerLookAhead`, and near the goal. The throttle is `CruiseThrottle` plus the speed error over `SpeedBand`. The brake works only when the forward speed is half a band over the target, because a brake input at rest drives the vehicle backward. A stall leads to a drive backward, then a new plan from the current place, with the stall place in `BlockedPoints`. `DescribeBlocker` sweeps ahead of the owner to name the actor that holds it back, or reports the pitch.
+- `UNsVehiclePathfinder` is the shared test of the reach tool and of Drive To. `FindGround` traces down for the ground. `CanStep` tests the step height, the slope against the profile limit times `SlopeMargin`, the drop, and a box sweep of the profile size. When `FNsVehiclePathQuery::Vehicle` is set, the sweep uses the object type and the responses of the vehicle root body, so the plan sees what the vehicle collides with. A sweep that starts inside an object does not count as blocked, because the start cell can touch a prop. `FindPath` runs A* on that grid. The step cost is the run times one plus `SlopeCost` times the square of the slope against the limit, plus `EdgeCost` times the run when a neighbor cell is a drop, a void, or water. The heuristic is the straight distance to the goal cell.
+- `SmoothPath` keeps the first point. From each kept point it tries the farthest later point up to `MaxSkip` grid points away, and goes nearer until a straight line passes `CanStep`, the blocked points, and the edge test at each grid step. The line adds its ground points, so the way keeps the height of the ground.
+- `UNsVehicleReachLibrary::MakeQuery` makes the query of the editor tools from the settings: margin 1 and no edge cost for the reach tool, the path settings for the drive-to tool and the hunt.
+- `UNsVehicleHuntRunner` is a transient object that the editor module keeps. It ticks on the core ticker, starts one Drive To after the other, tests the no-go boxes each tick, and writes the report when the list ends, when Play In Editor ends, or on `NsVehicle.HuntStop`.
 - `UNsVehicleStaticWheel` spins its mesh from the root velocity in its own tick. It does not need `ANsVehicle`.
 - `UNsVehicleWheel` is a static mesh with the tag `NsVehicleWheel`. The Animation module spins it.
 
@@ -111,6 +117,9 @@ The arcade powertrain uses the active gear ratio (3) and the active differential
 - Call `UNsVehicleSuspensionComponent::UpdatePhysics` from a tick to use the suspension on a pawn that is not an `ANsVehicle`.
 - Use `SetExtReplicationInput` for project input that must reach the server.
 
+- Call `UNsVehiclePathfinder::FindPath` with your own `FNsVehiclePathQuery` for a way without a drive, for example for a game AI.
+- Set `PathQuery` on `UNsVehicleAI` to change the grid, the costs, or the blocked radius of Drive To.
+
 Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` constructor, and the module physics functions are not virtual.
 
 ## Dependencies
@@ -124,8 +133,8 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 | `CoreUObject`, `Engine`, `Slate`, `SlateCore`, `Chaos` | Private, `AsyncTickPhysics` | Physics scene delegates and the Chaos sim callback |
 
 | `Core`, `CoreUObject`, `Engine`, `DeveloperSettings` | Public, `NsVehicleEditor` | The profile, the settings, and the queries |
-| `UnrealEd` | Private, `NsVehicleEditor` | The map load, the commandlet, and the Play In Editor world of the drive-to tool |
-| `NsVehicle` | Private, `NsVehicleEditor` | `ANsVehicle` and `UNsVehicleAI` for the drive-to tool |
+| `UnrealEd` | Private, `NsVehicleEditor` | The map load, the commandlet, and the Play In Editor world of the drive-to tool and the hunt tool |
+| `NsVehicle` | Private, `NsVehicleEditor` | `ANsVehicle`, `UNsVehicleAI`, `UNsVehiclePathfinder`, and the profile |
 
 `AsyncTickPhysics.Build.cs` also calls `SetupModulePhysicsSupport`. The `.uplugin` lists no plugin dependencies. The reach tool tests water by the class name of an actor, so it needs no Water plugin.
 
@@ -138,7 +147,9 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 - `GetSuspension` returns a copy of the array. Do not call it in a hot loop.
 - `bAutoWakeRigidBodies` wakes the body every frame.
 - The reach tool runs only in the editor. Each tested point does one line trace, one sweep, and one overlap for water. A 400 by 400 m area at 50 cm is about 640000 points, so use a larger grid spacing or an extent for a first look.
-- `FindPath` tests each neighbor of each expanded cell, so it can test a cell more than one time. It stops at **Max Cells** expanded cells. A goal far behind a wall can expand most of the reach area before the search fails.
+- `FindPath` tests each neighbor of each expanded cell, so it can test a cell more than one time. It stops at **Max Cells** expanded cells. A goal far behind a wall can expand most of the reach area before the search fails. It runs in one frame on the game thread.
+- Drive To plans one time at the start and one time after each stall, up to **Max Replans**. `SmoothPath` adds up to `MaxSkip` line tests for each kept point, each with one test for each grid step on the line. In each tick it does one projection on the waypoints near the current progress. `DescribeBlocker` sweeps one time, only when the driver gives up.
+- The hunt runner tests each no-go box against the vehicle location once a tick. The cost grows with the number of boxes only.
 
 ## Networking
 
@@ -161,3 +172,19 @@ The physics step branch:
 - `AsyncReplicatedTick` is a separate Blueprint call. On the server it copies the body velocities to `ServerVelocity` and `ServerAngularVelocity`. On a client it applies them. The vehicle does not call it.
 - The custom inputs go from the client to the server. They do not replicate to other clients.
 - `DetachWheel` and `ReattachWheel` are local only.
+- Drive To and the A* plan are local. Run them on the machine that owns the vehicle input.
+
+## Testing
+
+The plugin has no automated tests. Use these manual tests:
+
+1. Reach: in a map, run `NsVehicle.Reach X Y Z /Game/Path/Profile`. Make sure that the green points stop at walls, steep slopes, and water.
+2. Drive To: in Play In Editor, run `NsVehicle.DriveTo X Y Z /Game/Path/Profile` to a goal behind a fence. Make sure that the way goes around the fence and that the vehicle arrives.
+3. Stall: steer against the drive for some seconds. Make sure that the vehicle backs off, plans again, and continues.
+4. Hunt: run `NsVehicle.Hunt` with a list of two targets and one no-go box on the way. Make sure that the report lists both drives and the zone entry.
+
+## Change Rules
+
+- Keep the class redirect of `UNsVehicleReachProfile` in `Config/DefaultNsVehicle.ini`. Projects saved the profile assets with the old editor class path.
+- Keep the field names of the profile, the hunt list, and `FNsVehiclePathQuery`. Projects store them in data assets.
+- Keep the console command names. Test scripts of projects call them.

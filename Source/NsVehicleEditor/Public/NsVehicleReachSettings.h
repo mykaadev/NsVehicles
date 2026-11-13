@@ -67,7 +67,7 @@ public:
     UPROPERTY(Config, EditAnywhere, Category = "Drive To")
     TSoftObjectPtr<class UNsVehicleReachProfile> DriveProfile;
 
-    /** The distance between two points of the spline that NsVehicle.DriveTo makes from the way */
-    UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "10.0", Units = "cm"))
-    float DriveSplineSpacing;
+    /** The extra cost of a step beside a drop, a void, or water in the path search. Higher values keep the way away from edges and shores */
+    UPROPERTY(Config, EditAnywhere, Category = "Drive To", meta = (ClampMin = "0.0"))
+    float PathEdgeCost;
 };

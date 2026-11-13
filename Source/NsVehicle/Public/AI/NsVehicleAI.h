@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AI/NsVehiclePathfinder.h"
 #include "Components/ActorComponent.h"
 #include "NsVehicleAI.generated.h"
 
@@ -11,7 +12,10 @@ class USplineComponent;
 /** An event of the drive mode */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FNsVehicleAIDriveEvent);
 
-/** Makes a steering input that follows a target spline with a PID controller. In the drive mode it also drives the owner along the spline */
+/**
+ * Makes a steering input that follows a target spline with a PID controller. In the drive mode it also drives the owner along the spline
+ * Drive To plans a way with A* and drives it: it follows the waypoints, slows in sharp turns, backs off after a stall, and plans again from where it stands
+ */
 UCLASS(ClassGroup = ("NsVehicle"), meta = (BlueprintSpawnableComponent))
 class NSVEHICLE_API UNsVehicleAI : public UActorComponent
 {
@@ -51,6 +55,30 @@ public:
     UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
     bool IsDriving() const { return bDriving; }
 
+    /** Plans a way to the goal with A* for the profile, then drives it. The owner plans again after each stall. Returns false when there is no way */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle AI|Drive")
+    bool StartDriveTo(FVector Goal, const class UNsVehicleReachProfile* Profile);
+
+    /** Sets the grid, the traces, and the costs of the A* plan of Drive To. The owner and the actors on it are added at each plan */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle AI|Drive")
+    void SetPathQuery(const FNsVehiclePathQuery& InPathQuery) { PathQuery = InPathQuery; }
+
+    /** Returns the waypoints of the current way of Drive To */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    const TArray<FVector>& GetWaypoints() const { return Waypoints; }
+
+    /** Returns where the drive mode last gave up */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    FVector GetLastStuckLocation() const { return LastStuckLocation; }
+
+    /** Returns why the drive mode last gave up: the actor that blocked it, the slope, or no way left */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    FString GetLastStuckCause() const { return LastStuckCause; }
+
+    /** Returns the number of new plans in the current Drive To */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    int32 GetReplanCount() const { return Replans; }
+
     /** Turns the debug drawing and the on-screen state of the drive mode on or off */
     UFUNCTION(BlueprintCallable, Category = "NsVehicle AI")
     void SetDrawDebug(bool bInDrawDebug) { bDrawDebug = bInDrawDebug; }
@@ -61,6 +89,24 @@ private:
 
     /** Sets the inputs of the drive mode for one tick: steer to a point ahead on the spline, back off after a stall, and stop at the end */
     void TickDrive(float DeltaTime);
+
+    /** Sets the inputs of Drive To for one tick: steer to a point ahead on the waypoints, slow in turns, back off and plan again after a stall */
+    void TickWaypoints(float DeltaTime);
+
+    /** Plans a way from a point to the goal of Drive To, around the blocked points. Returns false when there is no way */
+    bool PlanWaypoints(const FVector& From);
+
+    /** Returns the distance along the waypoints of the point nearest to a location, near the current progress */
+    float ProjectOnWaypoints(const FVector& Location) const;
+
+    /** Returns the point at a distance along the waypoints */
+    FVector GetWaypointPointAt(float Distance) const;
+
+    /** Returns the turn of the way in the corner look-ahead after a distance, in degrees */
+    float GetTurnAhead(float Distance) const;
+
+    /** Stops the drive mode, keeps the place and the cause, and broadcasts On Drive Stuck */
+    void GiveUp(const FVector& Location, const FString& Cause, float Distance, float Length, const FVector& Target);
 
     /** Returns the controls component of the owner, or null */
     class UNsVehicleControlsComponent* GetControls() const;
@@ -154,6 +200,62 @@ private:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.0", Units = "cm/s", AllowPrivateAccess = "true"))
     float NoProgressSpeed;
 
+    /** The grid, the traces, and the costs of the A* plan of Drive To */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (AllowPrivateAccess = "true"))
+    FNsVehiclePathQuery PathQuery;
+
+    /** The distance ahead on the waypoints of the point that Drive To steers to, at rest. A short distance follows the way closely */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm", AllowPrivateAccess = "true"))
+    float WaypointLookAhead;
+
+    /** The time of travel that adds to the steering distance. A fast owner steers to a point farther ahead, so it does not weave */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.0", Units = "s", AllowPrivateAccess = "true"))
+    float LookAheadTime;
+
+    /** The time of the yaw rate that Drive To takes from the heading error. A higher value turns in more calmly */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.0", Units = "s", AllowPrivateAccess = "true"))
+    float SteerDamping;
+
+    /** The largest change of the steering input in one second */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.1", AllowPrivateAccess = "true"))
+    float SteerRate;
+
+    /** The speed of Drive To on a straight way */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm/s", AllowPrivateAccess = "true"))
+    float MaxDriveSpeed;
+
+    /** The speed of Drive To in a sharp turn and at the goal */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm/s", AllowPrivateAccess = "true"))
+    float CornerSpeed;
+
+    /** The distance ahead on the waypoints in which Drive To looks for a turn and slows before it */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm", AllowPrivateAccess = "true"))
+    float CornerLookAhead;
+
+    /** The speed error that gives the full throttle or the full brake */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm/s", AllowPrivateAccess = "true"))
+    float SpeedBand;
+
+    /** The throttle at the target speed, so the owner keeps its speed on flat ground */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
+    float CruiseThrottle;
+
+    /** The number of grid points that one straight part of the smoothed way can replace */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "2", AllowPrivateAccess = "true"))
+    int32 MaxSmoothSkip;
+
+    /** The distance to the goal at which Drive To stops */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm", AllowPrivateAccess = "true"))
+    float WaypointArriveDistance;
+
+    /** The turn angle ahead at which the target speed is the corner speed */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "deg", AllowPrivateAccess = "true"))
+    float SharpTurnAngle;
+
+    /** The number of new plans after stalls before Drive To gives up */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
+    int32 MaxReplans;
+
     /** The gain along the spline that counts as progress and resets the stall count */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "1.0", Units = "cm", AllowPrivateAccess = "true"))
     float ProgressDistance;
@@ -202,4 +304,38 @@ private:
 
     /** The time since the last progress along the spline */
     float NoProgressTimer = 0.f;
+
+    /** True while the drive mode follows the waypoints of Drive To, and not a spline */
+    bool bWaypointMode = false;
+
+    /** The waypoints of the current way of Drive To */
+    TArray<FVector> Waypoints;
+
+    /** The distance along the waypoints at each waypoint */
+    TArray<float> WaypointDistances;
+
+    /** The goal of Drive To */
+    FVector DriveGoal = FVector::ZeroVector;
+
+    /** The profile of Drive To */
+    UPROPERTY(Transient)
+    TObjectPtr<const class UNsVehicleReachProfile> DriveProfile;
+
+    /** The steering input of Drive To from the last tick */
+    float SteeringOutput = 0.f;
+
+    /** The distance along the waypoints that the owner reached */
+    float WaypointProgress = 0.f;
+
+    /** The new plans in the current Drive To */
+    int32 Replans = 0;
+
+    /** True when a back off ends with a new plan */
+    bool bReplanAfterReverse = false;
+
+    /** Where the drive mode last gave up */
+    FVector LastStuckLocation = FVector::ZeroVector;
+
+    /** Why the drive mode last gave up */
+    FString LastStuckCause;
 };

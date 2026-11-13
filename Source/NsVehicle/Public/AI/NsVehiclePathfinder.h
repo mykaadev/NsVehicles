@@ -97,10 +97,17 @@ public:
     /** True when the ground point is water */
     static bool IsWater(const class UWorld* World, const FVector& Ground, const FNsVehiclePathQuery& Query);
 
+    /** Returns why the vehicle of the profile cannot drive from one point to the next, or an empty string when it can. The points need not be on the ground. For debugging a way that the plan does not find */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle|Path", meta = (WorldContext = "WorldContextObject"))
+    static FString DescribeStep(const UObject* WorldContextObject, const class UNsVehicleReachProfile* Profile, FVector From, FVector To, const FNsVehiclePathQuery& Query, bool bAllowStartInside = false);
+
     /** True when the vehicle of the profile can drive from one ground point to the next. The slope limit is the limit of the profile times the slope margin. With Allow Start Inside, a wall that the start point already touches does not block */
     static bool CanStep(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, bool bAllowStartInside = false);
 
 private:
+    /** The step test of CanStep. When it fails, it writes the reason to Out Reason if that is not null */
+    static bool TestStep(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, bool bAllowStartInside, FString* OutReason);
+
     /** Finds the ground points of a straight line between two ground points at the grid spacing. Returns false when a step fails the tests, crosses a blocked point, or runs beside an edge */
     static bool TraceStraight(const class UWorld* World, const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, bool bAllowStartInside, TArray<FVector>& OutPoints);
 

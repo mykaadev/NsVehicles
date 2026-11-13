@@ -210,6 +210,8 @@ The plan smooths the grid way: a straight line replaces grid points when the lin
 
 From C++ or Python, call `UNsVehiclePathfinder::FindPath` to get the ground points of a way without a drive. Call `UNsVehiclePathfinder::SmoothPath` on the result for a way with fewer turns.
 
+When the plan finds no way where you expect one, call `UNsVehiclePathfinder::DescribeStep` with two points about one grid step apart. It returns why the vehicle cannot drive that step, for example "too steep", "steep bump at the middle", or "blocked by" an actor, or an empty string when the step passes.
+
 ### Drive to a point in a play test (drive-to tool)
 
 The editor command drives the player vehicle with Drive To. Use it to play test a route with a wheel setup, without driving by hand.
@@ -591,7 +593,8 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - The A* plan runs in one frame. A long way on a fine grid can take a second. Plan once, not each tick.
 - The plan knows the slope limit of the profile, not the real grip on each surface. A wet or loose surface can stop the vehicle on a way that the plan accepts. The driver then plans again.
 - The hunt list and the hunt tool are editor only.
-- The 50 cm grid can open or close a passage that is near the width of the vehicle plus the clearance. A start point a few cm away can give a different result.
+- The grid aligns to the world at multiples of the grid spacing, so one place gives one way. A passage that is near the width of the vehicle plus the clearance can still be open on one side of a grid line and closed on the other.
+- The plan reads the simple collision of the ground and the props, as the wheels do. A prop with collision of the whole mesh, for example one convex hull around a tree, is a solid block for the plan and for the vehicle. Give a tree a trunk capsule.
 - In World Partition, the plan sees only the loaded cells. A plan in the editor world depends on the cells that the editor has loaded.
 
 ### Keep a parked vehicle on a slope

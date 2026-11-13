@@ -44,8 +44,28 @@ TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContext
         return Path;
     }
 
-    // The grid has the start at cell 0,0. Each cell keeps the ground height where the vehicle stood
-    const FIntPoint GoalCell(FMath::RoundToInt((Goal.X - Start.X) / Spacing), FMath::RoundToInt((Goal.Y - Start.Y) / Spacing));
+    // The grid aligns to the world, so one place gives one way from any start point near it, in the editor and in a game
+    // The start joins the nearest grid point that it can drive to. When it reaches none, the grid starts at the start point
+    FVector GridOrigin = StartGround;
+    FVector OriginGround = StartGround;
+    const float CellX = FMath::FloorToFloat(Start.X / Spacing) * Spacing;
+    const float CellY = FMath::FloorToFloat(Start.Y / Spacing) * Spacing;
+    TArray<FVector2D> Corners = { { CellX, CellY }, { CellX + Spacing, CellY }, { CellX, CellY + Spacing }, { CellX + Spacing, CellY + Spacing } };
+    Corners.Sort([&Start](const FVector2D& A, const FVector2D& B) { return FVector2D::DistSquared(A, FVector2D(Start)) < FVector2D::DistSquared(B, FVector2D(Start)); });
+    for (const FVector2D& Corner : Corners)
+    {
+        FVector CornerGround;
+        if (FindGround(World, FVector(Corner.X, Corner.Y, StartGround.Z + Query.TraceHeight), Query.TraceHeight + Profile->MaxDropHeight, Query, CornerGround)
+            && CanStep(World, *Profile, StartGround, CornerGround, Query, true))
+        {
+            GridOrigin = FVector(Corner.X, Corner.Y, CornerGround.Z);
+            OriginGround = CornerGround;
+            break;
+        }
+    }
+
+    // Each cell keeps the ground height where the vehicle stood
+    const FIntPoint GoalCell(FMath::RoundToInt((Goal.X - GridOrigin.X) / Spacing), FMath::RoundToInt((Goal.Y - GridOrigin.Y) / Spacing));
     const auto Heuristic = [GoalCell, Spacing](const FIntPoint& Cell) { return static_cast<float>(FVector2D(Cell - GoalCell).Size()) * Spacing; };
     struct FOpenCell
     {
@@ -59,7 +79,7 @@ TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContext
     TMap<FIntPoint, FIntPoint> CameFrom;
     TArray<FOpenCell> Open;
     const FIntPoint Origin(0, 0);
-    GroundZ.Add(Origin, StartGround.Z);
+    GroundZ.Add(Origin, OriginGround.Z);
     CostSoFar.Add(Origin, 0.f);
     Open.HeapPush({ Origin, Heuristic(Origin) }, ByCost);
 
@@ -88,11 +108,11 @@ TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContext
             break;
         }
 
-        const FVector From(Start.X + Current.Cell.X * Spacing, Start.Y + Current.Cell.Y * Spacing, GroundZ[Current.Cell]);
+        const FVector From(GridOrigin.X + Current.Cell.X * Spacing, GridOrigin.Y + Current.Cell.Y * Spacing, GroundZ[Current.Cell]);
         for (const FIntPoint& Step : Neighbours)
         {
             const FIntPoint Next = Current.Cell + Step;
-            const FVector Above(Start.X + Next.X * Spacing, Start.Y + Next.Y * Spacing, From.Z + Query.TraceHeight);
+            const FVector Above(GridOrigin.X + Next.X * Spacing, GridOrigin.Y + Next.Y * Spacing, From.Z + Query.TraceHeight);
             FVector Ground;
             if (IsBlocked(Above, Query) || !FindGround(World, Above, Query.TraceHeight + Profile->MaxDropHeight, Query, Ground) || !CanStep(World, *Profile, From, Ground, Query, Current.Cell == Origin))
             {
@@ -123,13 +143,19 @@ TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContext
 
     for (FIntPoint Cell = Reached; ; Cell = CameFrom[Cell])
     {
-        Path.Add(FVector(Start.X + Cell.X * Spacing, Start.Y + Cell.Y * Spacing, GroundZ[Cell]));
+        Path.Add(FVector(GridOrigin.X + Cell.X * Spacing, GridOrigin.Y + Cell.Y * Spacing, GroundZ[Cell]));
         if (Cell == Origin)
         {
             break;
         }
     }
     Algo::Reverse(Path);
+
+    // The way begins where the vehicle stands, then joins the grid
+    if (FVector::DistSquared2D(StartGround, OriginGround) > 1.f)
+    {
+        Path.Insert(StartGround, 0);
+    }
     return Path;
 }
 
@@ -209,7 +235,8 @@ bool UNsVehiclePathfinder::IsBlocked(const FVector& Point, const FNsVehiclePathQ
 bool UNsVehiclePathfinder::FindGround(const UWorld* const World, const FVector& Above, const float TraceDepth, const FNsVehiclePathQuery& Query, FVector& OutGround)
 {
     FHitResult Hit;
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehiclePathGround), true);
+    // The ground is the simple collision that the wheels drive on. A complex trace hits branches and leaves, for example a tree canopy above the ground
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehiclePathGround), false);
     AddIgnored(Params, Query);
     if (!World->LineTraceSingleByChannel(Hit, Above, Above - FVector(0.f, 0.f, TraceDepth), Query.TraceChannel, Params))
     {
@@ -242,22 +269,62 @@ bool UNsVehiclePathfinder::IsWater(const UWorld* const World, const FVector& Gro
 
 bool UNsVehiclePathfinder::CanStep(const UWorld* const World, const UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, const bool bAllowStartInside)
 {
+    return TestStep(World, Profile, From, To, Query, bAllowStartInside, nullptr);
+}
+
+FString UNsVehiclePathfinder::DescribeStep(const UObject* const WorldContextObject, const UNsVehicleReachProfile* const Profile, const FVector From, const FVector To, const FNsVehiclePathQuery& Query, const bool bAllowStartInside)
+{
+    const UWorld* const World = WorldContextObject != nullptr ? WorldContextObject->GetWorld() : nullptr;
+    if (World == nullptr || Profile == nullptr)
+    {
+        return TEXT("no world or no profile");
+    }
+    FVector FromGround;
+    FVector ToGround;
+    if (!FindGround(World, From + FVector(0.f, 0.f, Query.TraceHeight), Query.TraceHeight * 2.f, Query, FromGround))
+    {
+        return TEXT("no ground at the start");
+    }
+    if (!FindGround(World, To + FVector(0.f, 0.f, Query.TraceHeight), Query.TraceHeight * 2.f, Query, ToGround))
+    {
+        return TEXT("no ground at the end");
+    }
+    FString Reason;
+    TestStep(World, *Profile, FromGround, ToGround, Query, bAllowStartInside, &Reason);
+    return Reason;
+}
+
+bool UNsVehiclePathfinder::TestStep(const UWorld* const World, const UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query, const bool bAllowStartInside, FString* const OutReason)
+{
+    const auto Fail = [OutReason](const FString& Reason)
+    {
+        if (OutReason != nullptr)
+        {
+            *OutReason = Reason;
+        }
+        return false;
+    };
+
     // A rise passes as a step, or as a slope that the vehicle climbs. A drop passes down to the drop limit, and it is one way
     if (!CanClimb(Profile, From, To, Query))
     {
-        return false;
+        return Fail(FString::Printf(TEXT("too steep: %.1f cm over %.1f cm"), To.Z - From.Z, FVector::Dist2D(From, To)));
     }
 
     // The ground between two grid points can hide a short steep bump, so each half of the step must pass too
     FVector Middle;
     const FVector MiddleAbove = (From + To) * 0.5f + FVector(0.f, 0.f, Query.TraceHeight);
-    if (!FindGround(World, MiddleAbove, Query.TraceHeight + Profile.MaxDropHeight, Query, Middle) || !CanClimb(Profile, From, Middle, Query) || !CanClimb(Profile, Middle, To, Query))
+    if (!FindGround(World, MiddleAbove, Query.TraceHeight + Profile.MaxDropHeight, Query, Middle))
     {
-        return false;
+        return Fail(TEXT("no ground at the middle"));
+    }
+    if (!CanClimb(Profile, From, Middle, Query) || !CanClimb(Profile, Middle, To, Query))
+    {
+        return Fail(FString::Printf(TEXT("steep bump at the middle: %.1f, %.1f, %.1f"), From.Z, Middle.Z, To.Z));
     }
     if (!Profile.bCrossesWater && IsWater(World, To, Query))
     {
-        return false;
+        return Fail(TEXT("water"));
     }
 
     // A box of the vehicle size moves from one point to the next above the step. A wall, a narrow gap, or a low roof stops it
@@ -297,11 +364,11 @@ bool UNsVehiclePathfinder::CanStep(const UWorld* const World, const UNsVehicleRe
         const bool bQueryOnly = HitComponent != nullptr && !CollisionEnabledHasPhysics(HitComponent->GetCollisionEnabled());
         if (!bGround && !bPawn && !bQueryOnly && !(bAllowStartInside && Hit.bStartPenetrating))
         {
-            return false;
+            return Fail(FString::Printf(TEXT("blocked by %s, %s, normal z %.2f%s"), *GetNameSafe(HitActor), *GetNameSafe(HitComponent), Hit.Normal.Z, Hit.bStartPenetrating ? TEXT(", starts inside") : TEXT("")));
         }
         Params.AddIgnoredComponent(Hit.GetComponent());
     }
-    return false;
+    return Fail(TEXT("too many ground parts in the sweep"));
 }
 
 bool UNsVehiclePathfinder::CanClimb(const UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query)
@@ -314,7 +381,7 @@ bool UNsVehiclePathfinder::CanClimb(const UNsVehicleReachProfile& Profile, const
 const AActor* UNsVehiclePathfinder::FindGroundActor(const UWorld* const World, const FVector& Ground, const FNsVehiclePathQuery& Query)
 {
     FHitResult Hit;
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehiclePathGroundActor), true);
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehiclePathGroundActor), false);
     AddIgnored(Params, Query);
     const FVector Start = Ground + FVector(0.f, 0.f, 5.f);
     return World->LineTraceSingleByChannel(Hit, Start, Start - FVector(0.f, 0.f, 15.f), Query.TraceChannel, Params) ? Hit.GetActor() : nullptr;

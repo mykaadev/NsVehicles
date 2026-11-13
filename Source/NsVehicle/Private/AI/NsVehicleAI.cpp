@@ -42,6 +42,8 @@ UNsVehicleAI::UNsVehicleAI()
     CruiseThrottle = 0.3f;
     MaxSmoothSkip = 12;
     SharpTurnAngle = 60.f;
+    DescentSpeed = 80.f;
+    SteepDescentAngle = 30.f;
     MaxReplans = 6;
     SlopeStallPitch = 10.f;
     SlopeMarginStep = 0.05f;
@@ -209,6 +211,24 @@ float UNsVehicleAI::GetTurnAhead(const float Distance) const
     return FMath::Abs(FRotator::NormalizeAxis((C - B).GetSafeNormal2D().Rotation().Yaw - (B - A).GetSafeNormal2D().Rotation().Yaw));
 }
 
+float UNsVehicleAI::GetDescentAhead(const float Distance) const
+{
+    // The way keeps a point at each grid spacing, so short parts show a steep bank that one long part averages out
+    float Steepest = 0.f;
+    FVector Previous = GetWaypointPointAt(Distance);
+    for (float Ahead = DescentSampleSpacing; Ahead <= CornerLookAhead; Ahead += DescentSampleSpacing)
+    {
+        const FVector Point = GetWaypointPointAt(Distance + Ahead);
+        const float Run = FVector::Dist2D(Previous, Point);
+        if (Run > 1.f)
+        {
+            Steepest = FMath::Max(Steepest, FMath::RadiansToDegrees(FMath::Atan2(Previous.Z - Point.Z, Run)));
+        }
+        Previous = Point;
+    }
+    return Steepest;
+}
+
 void UNsVehicleAI::TickWaypoints(const float DeltaTime)
 {
     UNsVehicleControlsComponent* const Controls = GetControls();
@@ -319,9 +339,10 @@ void UNsVehicleAI::TickWaypoints(const float DeltaTime)
         return;
     }
 
-    // The target speed drops before a turn and near the goal. Under it the throttle rises, and well over it the brake slows the owner
+    // The target speed drops before a turn, before a steep way down, and near the goal. Under it the throttle rises, and well over it the brake slows the owner
     const float TurnPart = FMath::Clamp(FMath::Max(GetTurnAhead(WaypointProgress), FMath::Abs(YawError)) / SharpTurnAngle, 0.f, 1.f);
-    const float TargetSpeed = FMath::Min(FMath::Lerp(MaxDriveSpeed, CornerSpeed, TurnPart), CornerSpeed + (Length - WaypointProgress));
+    const float DescentPart = FMath::Clamp(GetDescentAhead(WaypointProgress) / SteepDescentAngle, 0.f, 1.f);
+    const float TargetSpeed = FMath::Min3(FMath::Lerp(MaxDriveSpeed, CornerSpeed, TurnPart), FMath::Lerp(MaxDriveSpeed, DescentSpeed, DescentPart), CornerSpeed + (Length - WaypointProgress));
     const float SpeedError = TargetSpeed - ForwardSpeed;
     const bool bBrake = ForwardSpeed > TargetSpeed + SpeedBand * 0.5f;
     Controls->ApplyHandbrakeInput(false);

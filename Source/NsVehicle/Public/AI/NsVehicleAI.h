@@ -129,6 +129,9 @@ private:
     /** Returns the turn of the way in the corner look-ahead after a distance, in degrees */
     float GetTurnAhead(float Distance) const;
 
+    /** Returns the steepest slope down of the way in the corner look-ahead after a distance, in degrees. 0 when the way does not go down */
+    float GetDescentAhead(float Distance) const;
+
     /** Stops the drive mode, keeps the place and the cause, and broadcasts On Drive Stuck */
     void GiveUp(const FVector& Location, const FString& Cause, float Distance, float Length, const FVector& Target);
 
@@ -279,6 +282,14 @@ private:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "deg", AllowPrivateAccess = "true"))
     float SharpTurnAngle;
 
+    /** The speed of Drive To on a steep way down. The plan can take a steep bank, and a fast owner cannot stop or turn at its foot */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", Units = "cm/s", AllowPrivateAccess = "true"))
+    float DescentSpeed;
+
+    /** The slope down ahead at which the target speed is the descent speed */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "1.0", ClampMax = "89.0", Units = "deg", AllowPrivateAccess = "true"))
+    float SteepDescentAngle;
+
     /** The number of new plans after stalls before Drive To gives up */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive To", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
     int32 MaxReplans;
@@ -398,4 +409,7 @@ private:
 
     /** The stalls in the last Drive To */
     int32 DriveStalls = 0;
+
+    /** The distance between two points of the way that the slope test ahead compares */
+    static constexpr float DescentSampleSpacing = 50.f;
 };

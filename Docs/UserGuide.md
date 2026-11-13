@@ -208,7 +208,7 @@ The A* plan tests each step with a box of the profile size plus **Clearance** on
 
 With **Min Turn Radius** on the profile, the plan turns at most 45 degrees in one grid step. When one grid step is shorter than the arc of a 45 degree turn at that radius, it also makes no two turns in a row. So the plan gives no tight zigzag, for example switchbacks on a steep bank, that the vehicle cannot follow. **Turn Cost** makes each turn cost more, for a way with fewer turns.
 
-The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After a stall on a slope, the next plans use less of the slope limit, because the vehicle could not climb what the plan allowed. The next drive starts with the full margin again. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
+The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. It slows to **Descent Speed** before a steep way down, so it can still turn at the foot of a bank. The plan itself does not avoid steep ways down, so Drive To still finds the drops and banks that a player can use. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After a stall on a slope, the next plans use less of the slope limit, because the vehicle could not climb what the plan allowed. The next drive starts with the full margin again. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
 
 From C++ or Python, call `UNsVehiclePathfinder::FindPath` to get the ground points of a way without a drive. Call `UNsVehiclePathfinder::SmoothPath` on the result for a way with fewer turns.
 
@@ -515,6 +515,8 @@ With **Use With Drivetrain** on:
 | NsVehicleAI | Corner Speed | 100 cm/s | Speed of Drive To in a sharp turn and at the goal |
 | NsVehicleAI | Corner Look Ahead | 250 cm | Distance ahead on the way in which Drive To looks for a turn |
 | NsVehicleAI | Sharp Turn Angle | 60 deg | Turn angle ahead at which the target speed is the corner speed |
+| NsVehicleAI | Descent Speed | 80 cm/s | Target speed on a steep way down |
+| NsVehicleAI | Steep Descent Angle | 30 deg | Slope down ahead at which the target speed is the descent speed |
 | NsVehicleAI | Speed Band | 120 cm/s | Speed error that gives the full throttle or the full brake |
 | NsVehicleAI | Cruise Throttle | 0.3 | Throttle at the target speed |
 | NsVehicleAI | Max Smooth Skip | 12 | Grid points that one straight part of the smoothed way can replace |
@@ -617,7 +619,7 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - The A* plan tests the same grid as the reach tool. A way that is narrower than the grid spacing can be missed.
 - The A* plan runs in one frame. A long way on a fine grid can take some seconds. Plan once, not each tick.
 - The turn limit starts with no heading. The first step of a plan can go in any direction, so after a stall the first turn can be tighter than the vehicle turns. The driver drives backward before it plans again, which usually gives the room.
-- The plan allows any slope down when each step drops less than **Max Drop Height**. A long steep slope down can make the vehicle too fast for the next turn.
+- The plan allows any slope down when each step drops less than **Max Drop Height**. The driver slows before a steep way down, but on a very steep bank gravity can still make the vehicle fast before the foot.
 - The plan knows the slope limit of the profile, not the real grip on each surface. A wet or loose surface can stop the vehicle on a way that the plan accepts. The driver then plans again.
 - The hunt list and the hunt tool are editor only.
 - The Vehicle AI tab drives the vehicle that the first player drives, or the vehicle nearest to the pawn of that player.

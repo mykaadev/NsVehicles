@@ -26,6 +26,65 @@ FNsVehiclePathQuery::FNsVehiclePathQuery()
     WallAngle = 50.f;
 }
 
+FNsVehiclePointFilter::FNsVehiclePointFilter()
+{
+    bLandscapeOnly = false;
+    bAllowUnderWater = false;
+    LandscapeClassNameFilter = TEXT("Landscape");
+    MaxTries = 64;
+}
+
+bool UNsVehiclePathfinder::FindRandomPoint(const UObject* const WorldContextObject, const FVector Center, const float Radius, const FNsVehiclePointFilter& Filter, const FNsVehiclePathQuery& Query, FVector& OutPoint)
+{
+    const UWorld* const World = WorldContextObject != nullptr ? WorldContextObject->GetWorld() : nullptr;
+    if (World == nullptr)
+    {
+        UE_LOG(LogNsVehiclePath, Error, TEXT("FindRandomPoint needs a world"));
+        return false;
+    }
+
+    for (int32 Try = 0; Try < Filter.MaxTries; ++Try)
+    {
+        const float Angle = FMath::FRandRange(0.f, UE_TWO_PI);
+        const float Distance = Radius * FMath::Sqrt(FMath::FRand());
+        const FVector Above(Center.X + Distance * FMath::Cos(Angle), Center.Y + Distance * FMath::Sin(Angle), Center.Z + RandomSearchHeight);
+
+        // A water surface can block the trace. Under water allowed, the trace goes through the water to the bed
+        FNsVehiclePathQuery TraceQuery = Query;
+        FVector Ground = FVector::ZeroVector;
+        bool bFound = false;
+        bool bInWater = false;
+        for (int32 Layer = 0; Layer < 3 && !bFound; ++Layer)
+        {
+            if (!FindGround(World, Above, RandomSearchHeight * 2.f, TraceQuery, Ground))
+            {
+                break;
+            }
+            AActor* const GroundActor = FindGroundActor(World, Ground, TraceQuery);
+            const bool bWaterActor = GroundActor != nullptr && !Query.WaterClassNameFilter.IsEmpty() && GroundActor->GetClass()->GetName().Contains(Query.WaterClassNameFilter);
+            if (bWaterActor)
+            {
+                bInWater = true;
+                TraceQuery.IgnoredActors.Add(GroundActor);
+                continue;
+            }
+            bInWater = bInWater || IsWater(World, Ground, Query);
+            const bool bLandscape = GroundActor != nullptr && GroundActor->GetClass()->GetName().Contains(Filter.LandscapeClassNameFilter);
+            bFound = (!Filter.bLandscapeOnly || bLandscape) && (Filter.bAllowUnderWater || !bInWater);
+            if (!bFound)
+            {
+                break;
+            }
+        }
+        if (bFound)
+        {
+            OutPoint = Ground;
+            return true;
+        }
+    }
+    return false;
+}
+
 TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContextObject, const FVector Start, const FVector Goal, const UNsVehicleReachProfile* const Profile, const FNsVehiclePathQuery& Query)
 {
     TArray<FVector> Path;
@@ -379,7 +438,7 @@ bool UNsVehiclePathfinder::CanClimb(const UNsVehicleReachProfile& Profile, const
     return Rise >= -Profile.MaxDropHeight && (Rise <= Profile.MaxStepHeight || SlopeDegrees <= Profile.MaxSlopeDegrees * Query.SlopeMargin);
 }
 
-const AActor* UNsVehiclePathfinder::FindGroundActor(const UWorld* const World, const FVector& Ground, const FNsVehiclePathQuery& Query)
+AActor* UNsVehiclePathfinder::FindGroundActor(const UWorld* const World, const FVector& Ground, const FNsVehiclePathQuery& Query)
 {
     FHitResult Hit;
     FCollisionQueryParams Params(SCENE_QUERY_STAT(NsVehiclePathGroundActor), false);

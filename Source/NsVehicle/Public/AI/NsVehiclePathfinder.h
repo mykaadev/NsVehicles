@@ -72,6 +72,32 @@ struct NSVEHICLE_API FNsVehiclePathQuery
     float WallAngle;
 };
 
+/** Which ground a random point can be on */
+USTRUCT(BlueprintType)
+struct NSVEHICLE_API FNsVehiclePointFilter
+{
+    GENERATED_BODY()
+
+    /** Constructor */
+    FNsVehiclePointFilter();
+
+    /** Keeps only points on the landscape, not on a prop or a building */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path")
+    bool bLandscapeOnly;
+
+    /** Keeps points under water too, on the bed below the surface. Off keeps only dry ground */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path")
+    bool bAllowUnderWater;
+
+    /** An actor whose class name holds this text is the landscape. The plugin needs no dependency on the Landscape module */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path")
+    FString LandscapeClassNameFilter;
+
+    /** The number of random points that the search tests before it gives up */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "1"))
+    int32 MaxTries;
+};
+
 /**
  * Finds a way that a vehicle with a reach profile can drive, with A* on a grid of ground points
  * A step to the next point passes when the slope, the step, the drop, the width, the roof, and the water allow it. The AI driver and the reach tool use the same tests
@@ -90,6 +116,10 @@ public:
     /** Replaces each run of grid points with a straight line when the line passes the same step tests away from edges. A grid way turns in steps of 45 degrees, so a vehicle on the raw way weaves. The result keeps a ground point at each grid spacing */
     UFUNCTION(BlueprintCallable, Category = "NsVehicle|Path", meta = (WorldContext = "WorldContextObject"))
     static TArray<FVector> SmoothPath(const UObject* WorldContextObject, const TArray<FVector>& Path, const class UNsVehicleReachProfile* Profile, const FNsVehiclePathQuery& Query, int32 MaxSkip = 12);
+
+    /** Finds a random point on the ground in a circle around the center that the filter keeps. Returns false when no try finds one */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle|Path", meta = (WorldContext = "WorldContextObject"))
+    static bool FindRandomPoint(const UObject* WorldContextObject, FVector Center, float Radius, const FNsVehiclePointFilter& Filter, const FNsVehiclePathQuery& Query, FVector& OutPoint);
 
     /** Finds the ground under a point. Returns false when there is no ground in the trace */
     static bool FindGround(const class UWorld* World, const FVector& Above, float TraceDepth, const FNsVehiclePathQuery& Query, FVector& OutGround);
@@ -118,7 +148,7 @@ private:
     static bool CanClimb(const class UNsVehicleReachProfile& Profile, const FVector& From, const FVector& To, const FNsVehiclePathQuery& Query);
 
     /** Returns the actor of the ground at a ground point, or null */
-    static const class AActor* FindGroundActor(const class UWorld* World, const FVector& Ground, const FNsVehiclePathQuery& Query);
+    static class AActor* FindGroundActor(const class UWorld* World, const FVector& Ground, const FNsVehiclePathQuery& Query);
 
     /** True when a hit actor is the ground under the step, or a terrain tile of the same class next to it */
     static bool IsGroundActor(const class AActor* Actor, const class AActor* GroundFrom, const class AActor* GroundTo);
@@ -136,4 +166,7 @@ private:
 
     /** The size above which an actor of the ground class counts as a terrain tile, not a prop */
     static constexpr float TerrainTileSize = 2000.f;
+
+    /** The height above and below the center from which a random point traces for the ground */
+    static constexpr float RandomSearchHeight = 100000.f;
 };

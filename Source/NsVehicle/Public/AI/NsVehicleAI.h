@@ -79,6 +79,30 @@ public:
     UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
     int32 GetReplanCount() const { return Replans; }
 
+    /** Returns the lines of the log of the last Drive To: each plan, each stall with its place, pitch, and cause, and the result */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    const TArray<FString>& GetDriveLog() const { return DriveLog; }
+
+    /** Returns a short status of Drive To for a debug panel: the state, the plans, the stalls, the last cause, the slope margin, and the distance left */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    FString GetDriveStatus() const;
+
+    /** Writes the log of the last Drive To to Saved/QA/Drive_<time>.md. Returns the file path, or an empty string when there is no log. Not in Shipping */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle AI|Drive")
+    FString SaveDriveReport() const;
+
+    /** Drives the last Drive To again with the same goal and profile. With From Same Start, the owner first moves back to the start of that drive */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle AI|Drive")
+    bool RepeatLastDrive(bool bFromSameStart);
+
+    /** Returns where the last Drive To started */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    FVector GetLastDriveStart() const { return LastDriveStart; }
+
+    /** Returns the goal of the last Drive To */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle AI|Drive")
+    FVector GetLastDriveGoal() const { return DriveGoal; }
+
     /** Turns the debug drawing and the on-screen state of the drive mode on or off */
     UFUNCTION(BlueprintCallable, Category = "NsVehicle AI")
     void SetDrawDebug(bool bInDrawDebug) { bDrawDebug = bInDrawDebug; }
@@ -110,6 +134,9 @@ private:
 
     /** Returns the controls component of the owner, or null */
     class UNsVehicleControlsComponent* GetControls() const;
+
+    /** Adds a line to the drive log, with the time since the start of the drive */
+    void AddDriveLog(const FString& Line);
 
     /** Returns what holds the owner back: the actor just ahead of it, or the slope under it */
     FString DescribeBlocker() const;
@@ -356,4 +383,19 @@ private:
 
     /** Why the drive mode last gave up */
     FString LastStuckCause;
+
+    /** The log of the last Drive To */
+    TArray<FString> DriveLog;
+
+    /** The result of the last Drive To: arrived, stuck, no way, or stopped. Empty while it drives */
+    FString LastDriveResult;
+
+    /** Where the last Drive To started */
+    FVector LastDriveStart = FVector::ZeroVector;
+
+    /** The game time when the last Drive To started */
+    double DriveStartTime = 0.0;
+
+    /** The stalls in the last Drive To */
+    int32 DriveStalls = 0;
 };

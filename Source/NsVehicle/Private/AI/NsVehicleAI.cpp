@@ -5,6 +5,10 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/Engine.h"
+#include "HAL/FileManager.h"
+#include "Misc/DateTime.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Modules/Control/NsVehicleControlsComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "DrawDebugHelpers.h"    
@@ -98,12 +102,20 @@ bool UNsVehicleAI::StartDriveTo(const FVector Goal, const UNsVehicleReachProfile
     DriveGoal = Goal;
     DriveProfile = Profile;
     Replans = 0;
+    DriveStalls = 0;
     LastStuckCause.Reset();
+    LastDriveResult.Reset();
     PathQuery.BlockedPoints.Reset();
+    DriveLog.Reset();
+    LastDriveStart = OwnerActor->GetActorLocation();
+    DriveStartTime = World != nullptr ? World->GetTimeSeconds() : 0.0;
+    AddDriveLog(FString::Printf(TEXT("Start at %s to %s with %s, slope margin %.2f"), *LastDriveStart.ToCompactString(), *Goal.ToCompactString(), *Profile->GetName(), PathQuery.SlopeMargin));
     if (!PlanWaypoints(OwnerActor->GetActorLocation()))
     {
         LastStuckLocation = OwnerActor->GetActorLocation();
         LastStuckCause = TEXT("no way to the goal");
+        LastDriveResult = TEXT("no way");
+        AddDriveLog(TEXT("No way to the goal"));
         return false;
     }
 
@@ -137,6 +149,7 @@ bool UNsVehicleAI::PlanWaypoints(const FVector& From)
     }
 
     Waypoints = UNsVehiclePathfinder::SmoothPath(OwnerActor, Path, DriveProfile, PathQuery, MaxSmoothSkip);
+    AddDriveLog(FString::Printf(TEXT("Plan from %s: %d grid points, %d after smoothing"), *From.ToCompactString(), Path.Num(), Waypoints.Num()));
     WaypointDistances.Reset(Waypoints.Num());
     WaypointDistances.Add(0.f);
     for (int32 Index = 1; Index < Waypoints.Num(); ++Index)
@@ -210,6 +223,8 @@ void UNsVehicleAI::TickWaypoints(const float DeltaTime)
     const float Length = WaypointDistances.Last();
     if (FVector::Dist2D(Location, Waypoints.Last()) < WaypointArriveDistance)
     {
+        LastDriveResult = TEXT("arrived");
+        AddDriveLog(FString::Printf(TEXT("Arrived after %d new plans and %d stalls"), Replans, DriveStalls));
         StopDrive();
         UE_LOG(LogNsVehicleAI, Display, TEXT("Drive To of %s arrived after %d new plans"), *GetNameSafe(GetOwner()), Replans);
         ShowDriveState(TEXT("Arrived"), Length, Length, Waypoints.Last(), FColor::Green);
@@ -277,6 +292,8 @@ void UNsVehicleAI::TickWaypoints(const float DeltaTime)
     {
         StallTimer = 0.f;
         NoProgressTimer = 0.f;
+        ++DriveStalls;
+        AddDriveLog(FString::Printf(TEXT("Stall at %s, pitch %.0f deg, speed %.0f cm/s: %s"), *Location.ToCompactString(), FMath::Abs(OwnerActor->GetActorRotation().Pitch), Speed, *DescribeBlocker()));
         if (++Replans > MaxReplans)
         {
             GiveUp(Location, DescribeBlocker(), WaypointProgress, Length, Target);
@@ -295,6 +312,7 @@ void UNsVehicleAI::TickWaypoints(const float DeltaTime)
             }
             PathQuery.SlopeMargin = FMath::Max(PathQuery.SlopeMargin - SlopeMarginStep, MinSlopeMargin);
             UE_LOG(LogNsVehicleAI, Display, TEXT("Drive To of %s stalled on a slope at %s, pitch %.0f deg. The next plans use a slope margin of %.2f"), *GetNameSafe(GetOwner()), *Location.ToString(), FMath::Abs(OwnerActor->GetActorRotation().Pitch), PathQuery.SlopeMargin);
+            AddDriveLog(FString::Printf(TEXT("Slope margin lowered to %.2f"), PathQuery.SlopeMargin));
         }
         ReverseTimer = ReverseSeconds;
         bReplanAfterReverse = true;
@@ -313,8 +331,81 @@ void UNsVehicleAI::TickWaypoints(const float DeltaTime)
     ShowDriveState(TEXT("Driving"), WaypointProgress, Length, Target, FColor::Yellow);
 }
 
+void UNsVehicleAI::AddDriveLog(const FString& Line)
+{
+    const double Seconds = World != nullptr ? World->GetTimeSeconds() - DriveStartTime : 0.0;
+    DriveLog.Add(FString::Printf(TEXT("%6.1f s  %s"), Seconds, *Line));
+}
+
+FString UNsVehicleAI::GetDriveStatus() const
+{
+    if (DriveLog.IsEmpty())
+    {
+        return TEXT("No drive yet");
+    }
+    const FString State = bDriving ? (ReverseTimer > 0.f ? TEXT("Backing off") : TEXT("Driving")) : LastDriveResult;
+    const FVector Location = OwnerActor != nullptr ? OwnerActor->GetActorLocation() : LastDriveStart;
+    const float Left = FVector::Dist2D(Location, DriveGoal) * 0.01f;
+    return FString::Printf(TEXT("%s | %d new plans | %d stalls | slope margin %.2f | %.0f m left%s%s"), *State, Replans, DriveStalls, PathQuery.SlopeMargin, Left,
+        LastStuckCause.IsEmpty() ? TEXT("") : TEXT(" | last cause: "), *LastStuckCause);
+}
+
+FString UNsVehicleAI::SaveDriveReport() const
+{
+#if UE_BUILD_SHIPPING
+    return FString();
+#else
+    if (DriveLog.IsEmpty())
+    {
+        return FString();
+    }
+    TArray<FString> Lines;
+    Lines.Add(FString::Printf(TEXT("# Drive report %s"), *GetNameSafe(GetOwner())));
+    Lines.Add(FString());
+    Lines.Add(FString::Printf(TEXT("Date: %s. Profile: %s. Result: %s"), *FDateTime::Now().ToString(), *GetNameSafe(DriveProfile), LastDriveResult.IsEmpty() ? TEXT("driving") : *LastDriveResult));
+    Lines.Add(FString::Printf(TEXT("Start: %s. Goal: %s"), *LastDriveStart.ToCompactString(), *DriveGoal.ToCompactString()));
+    Lines.Add(FString());
+    Lines.Add(TEXT("```"));
+    Lines.Append(DriveLog);
+    Lines.Add(TEXT("```"));
+    const FString Folder = FPaths::ProjectSavedDir() / TEXT("QA");
+    IFileManager::Get().MakeDirectory(*Folder, true);
+    const FString Path = FPaths::ConvertRelativePathToFull(Folder / FString::Printf(TEXT("Drive_%s.md"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
+    if (!FFileHelper::SaveStringArrayToFile(Lines, *Path))
+    {
+        UE_LOG(LogNsVehicleAI, Error, TEXT("SaveDriveReport could not write %s"), *Path);
+        return FString();
+    }
+    UE_LOG(LogNsVehicleAI, Display, TEXT("Drive report: %s"), *Path);
+    return Path;
+#endif
+}
+
+bool UNsVehicleAI::RepeatLastDrive(const bool bFromSameStart)
+{
+    if (DriveProfile == nullptr || DriveLog.IsEmpty())
+    {
+        return false;
+    }
+    if (bFromSameStart && GetOwner() != nullptr)
+    {
+        StopDrive();
+        AActor* const Owner = GetOwner();
+        const FVector Toward = (DriveGoal - LastDriveStart).GetSafeNormal2D();
+        Owner->SetActorLocationAndRotation(LastDriveStart + FVector(0.f, 0.f, 20.f), FRotator(0.f, Toward.Rotation().Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+        if (UPrimitiveComponent* const Body = Cast<UPrimitiveComponent>(Owner->GetRootComponent()))
+        {
+            Body->SetPhysicsLinearVelocity(FVector::ZeroVector);
+            Body->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+        }
+    }
+    return StartDriveTo(DriveGoal, DriveProfile);
+}
+
 void UNsVehicleAI::GiveUp(const FVector& Location, const FString& Cause, const float Distance, const float Length, const FVector& Target)
 {
+    LastDriveResult = FString::Printf(TEXT("stuck: %s"), *Cause);
+    AddDriveLog(FString::Printf(TEXT("Gave up at %s: %s"), *Location.ToCompactString(), *Cause));
     StopDrive();
     LastStuckLocation = Location;
     LastStuckCause = Cause;
@@ -325,6 +416,11 @@ void UNsVehicleAI::GiveUp(const FVector& Location, const FString& Cause, const f
 
 void UNsVehicleAI::StopDrive()
 {
+    if (bDriving && bWaypointMode && LastDriveResult.IsEmpty())
+    {
+        LastDriveResult = TEXT("stopped");
+        AddDriveLog(TEXT("Stopped from outside"));
+    }
     bDriving = false;
     ReverseTimer = 0.f;
     if (bSlopeMarginLowered)

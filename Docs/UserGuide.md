@@ -225,6 +225,21 @@ The vehicle is the pawn of the first player, or the vehicle nearest to that pawn
 
 While the vehicle drives, the screen shows one line: the state, the progress, the number of plans, the speed, the pitch, and the stall count. The way is green where it is easy, yellow near the slope limit, and red over it. A new plan draws a new way.
 
+### Test drives in the game (Vehicle AI tab)
+
+With the NsCheats plugin in the project, the cheat window has a **Vehicle AI** tab. It works in Play In Editor and in development builds, not in Shipping.
+
+1. Get in a vehicle and open the cheat window.
+2. Pick the **Tire profile**.
+3. Click **Drive to a picked point**, fly the free camera, and left click on the goal. Or set **Random radius**, **Landscape only**, and **Under water allowed**, and click **Drive to a random point**.
+4. Watch the drive. **Drive status** shows the state, the plans, the stalls, the slope margin, the distance left, and the last lines of the drive log.
+5. Click **Save the drive report** to write `Saved/QA/Drive_<time>.md`. Click **Go to the last stall** to look at the place where the drive gave up.
+6. After a fix, click **Repeat from the same start**.
+
+In Play In Editor, the **Hunt** section runs a hunt list from the tab.
+
+From code, `UNsVehiclePathfinder::FindRandomPoint` gives a random point with an `FNsVehiclePointFilter`, and `UNsVehicleAI` gives `GetDriveLog`, `GetDriveStatus`, `SaveDriveReport`, and `RepeatLastDrive`.
+
 ### Hunt for weird spots (hunt tool)
 
 The hunt drives the player vehicle to a list of places, one after the other, and writes a report. Use it to find the places that a player can reach and must not, and the places that a player cannot reach and must.
@@ -596,6 +611,8 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - The A* plan runs in one frame. A long way on a fine grid can take a second. Plan once, not each tick.
 - The plan knows the slope limit of the profile, not the real grip on each surface. A wet or loose surface can stop the vehicle on a way that the plan accepts. The driver then plans again.
 - The hunt list and the hunt tool are editor only.
+- The Vehicle AI tab drives the vehicle that the first player drives, or the vehicle nearest to the pawn of that player.
+- The tab finds the reach profiles with the asset registry. A profile saved before the profile class moved to the runtime module loads, but the search does not find it until you save it one time.
 - The grid aligns to the world at multiples of the grid spacing, so one place gives one way. A passage that is near the width of the vehicle plus the clearance can still be open on one side of a grid line and closed on the other.
 - The plan reads the simple collision of the ground and the props, as the wheels do. A prop with collision of the whole mesh, for example one convex hull around a tree, is a solid block for the plan and for the vehicle. Give a tree a trunk capsule.
 - In World Partition, the plan sees only the loaded cells. A plan in the editor world depends on the cells that the editor has loaded.

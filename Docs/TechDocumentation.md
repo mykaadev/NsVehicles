@@ -12,6 +12,10 @@ The descriptor is `NsVehicle.uplugin`. It has three modules. The two runtime mod
 | `NsVehicle` | Runtime | Default | The vehicle pawn, the modules, the wheels, the interior parts, the articulated part, the AI steering and drive mode, the reach profile `UNsVehicleReachProfile`, and the A* plan `UNsVehiclePathfinder` |
 | `NsVehicleEditor` | Editor | Default | The reach tool: `UNsVehicleReachSettings`, `UNsVehicleReachLibrary`, the `NsVehicle.Reach` console command, and the `NsVehicleReach` commandlet. The drive-to tool: the `NsVehicle.DriveTo` and `NsVehicle.DriveStop` console commands. The hunt tool: `UNsVehicleHuntList`, `UNsVehicleHuntRunner`, and the `NsVehicle.Hunt` and `NsVehicle.HuntStop` console commands |
 
+| Module | Type | Loading phase | Content |
+|---|---|---|---|
+| `NsVehicleCheats` | DeveloperTool | Default | `UNsVehicleCheatsSubsystem`, the Vehicle AI tab of the NsCheats window. It links `NsCheatsRuntime` only when the NsCheats plugin is present, and defines `WITH_NSCHEATS`. Without NsCheats the subsystem does not start |
+
 `UNsVehicleReachProfile` moved from `NsVehicleEditor` to `NsVehicle`. `Config/DefaultNsVehicle.ini` holds a class redirect, so the profile assets of a project load with no change.
 
 `AsyncTickPhysics` is bundled in `Source/ThirdParty/AsyncTickPhysics/Source/AsyncTickPhysics/`. It has no descriptor of its own. `NsVehicle.uplugin` lists it.
@@ -134,9 +138,11 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 
 | `Core`, `CoreUObject`, `Engine`, `DeveloperSettings` | Public, `NsVehicleEditor` | The profile, the settings, and the queries |
 | `UnrealEd` | Private, `NsVehicleEditor` | The map load, the commandlet, and the Play In Editor world of the drive-to tool and the hunt tool |
+| `NsVehicle`, `AssetRegistry` | Public and private, `NsVehicleCheats` | The driver and the profile and hunt list search |
+| `NsCheatsRuntime` (plugin NsCheats, optional) | Private, `NsVehicleCheats` | The cheat tab and the point picker. The `.uplugin` lists NsCheats as an optional plugin |
 | `NsVehicle` | Private, `NsVehicleEditor` | `ANsVehicle`, `UNsVehicleAI`, `UNsVehiclePathfinder`, and the profile |
 
-`AsyncTickPhysics.Build.cs` also calls `SetupModulePhysicsSupport`. The `.uplugin` lists no plugin dependencies. The reach tool tests water by the class name of an actor, so it needs no Water plugin.
+`AsyncTickPhysics.Build.cs` also calls `SetupModulePhysicsSupport`. The `.uplugin` lists NsCheats as an optional plugin. The reach tool tests water by the class name of an actor, so it needs no Water plugin.
 
 ## Performance
 
@@ -185,6 +191,8 @@ The plugin has no automated tests. Use these manual tests:
 
 ## Change Rules
 
-- Keep the class redirect of `UNsVehicleReachProfile` in `Config/DefaultNsVehicle.ini`. Projects saved the profile assets with the old editor class path.
+- Keep the class redirect of `UNsVehicleReachProfile` in `Config/DefaultNsVehicle.ini`. Projects saved the profile assets with the old editor class path. Save such a profile one time, so that a search by class finds it.
+- `UNsVehicleAI` keeps a drive log: each plan, each stall with its place, pitch, and cause, each slope margin change, and the result. `SaveDriveReport` writes it to `Saved/QA` and does nothing in Shipping.
+- `FindRandomPoint` traces down from 1 km above the center at random places in the circle. Under water allowed, the trace ignores a water body and goes on to the bed.
 - Keep the field names of the profile, the hunt list, and `FNsVehiclePathQuery`. Projects store them in data assets.
 - Keep the console command names. Test scripts of projects call them.

@@ -37,9 +37,21 @@
 			]
 		},
 		{
+			"Name": "NsVehicleCheats",
+			"Type": "DeveloperTool",
+			"LoadingPhase": "Default"
+		},
+		{
 			"Name": "NsVehicleEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "NsCheats",
+			"Enabled": true,
+			"Optional": true
 		}
 	]
 }

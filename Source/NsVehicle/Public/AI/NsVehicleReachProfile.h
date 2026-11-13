@@ -37,6 +37,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Reach", meta = (ClampMin = "1.0", Units = "cm"))
     float Height = 12.f;
 
+    /** The tightest turn of the vehicle, measured at the center of the body. The path search gives no turn tighter than this. 0 allows any turn, as the reach tool does */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Reach", meta = (ClampMin = "0.0", Units = "cm"))
+    float MinTurnRadius = 0.f;
+
     /** True when the vehicle crosses water, for example with floats */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Reach")
     bool bCrossesWater = false;

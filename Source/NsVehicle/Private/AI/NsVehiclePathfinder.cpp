@@ -24,6 +24,8 @@ FNsVehiclePathQuery::FNsVehiclePathQuery()
     BlockedRadius = 60.f;
     Clearance = 10.f;
     WallAngle = 50.f;
+    TurnCost = 0.f;
+    HeuristicWeight = 1.f;
 }
 
 FNsVehiclePointFilter::FNsVehiclePointFilter()
@@ -123,42 +125,67 @@ TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContext
         }
     }
 
-    // Each cell keeps the ground height where the vehicle stood
+    // A search state is a cell and the heading into it. When one grid step is shorter than the arc of a turn, the state also keeps whether the step into it was a turn
+    // Without a turn limit or a turn cost, the state is the cell only, and the search is as small as before
+    const bool bTurns = Profile->MinTurnRadius > 0.f || Query.TurnCost > 0.f;
+    // A turn of 45 degrees needs this distance of driving at the tightest turn of the vehicle
+    const float TurnArc = Profile->MinTurnRadius * UE_HALF_PI * 0.5f;
+    const bool bTrackTurn = TurnArc > Spacing;
     const FIntPoint GoalCell(FMath::RoundToInt((Goal.X - GridOrigin.X) / Spacing), FMath::RoundToInt((Goal.Y - GridOrigin.Y) / Spacing));
-    const auto Heuristic = [GoalCell, Spacing](const FIntPoint& Cell) { return static_cast<float>(FVector2D(Cell - GoalCell).Size()) * Spacing; };
-    struct FOpenCell
+    const float HeuristicWeight = Query.HeuristicWeight;
+    const auto Heuristic = [GoalCell, Spacing, HeuristicWeight](const FIntPoint& Cell) { return static_cast<float>(FVector2D(Cell - GoalCell).Size()) * Spacing * HeuristicWeight; };
+    struct FOpenState
     {
-        FIntPoint Cell;
+        uint64 Key;
         float Cost;
     };
-    const auto ByCost = [](const FOpenCell& A, const FOpenCell& B) { return A.Cost < B.Cost; };
+    const auto ByCost = [](const FOpenState& A, const FOpenState& B) { return A.Cost < B.Cost; };
+    struct FSearchState
+    {
+        float GroundZ = 0.f;
+        float Cost = 0.f;
+        uint64 CameFrom = 0;
+    };
+    // The step test of a cell to a neighbour does not depend on the heading, so each one runs once
+    struct FStepResult
+    {
+        bool bCanStep = false;
+        float GroundZ = 0.f;
+        float Cost = 0.f;
+    };
 
-    TMap<FIntPoint, float> GroundZ;
-    TMap<FIntPoint, float> CostSoFar;
-    TMap<FIntPoint, FIntPoint> CameFrom;
-    TArray<FOpenCell> Open;
+    TMap<uint64, FSearchState> States;
+    TMap<uint64, FStepResult> Steps;
+    States.Reserve(FMath::Min(Query.MaxCells, 65536));
+    Steps.Reserve(FMath::Min(Query.MaxCells, 65536));
+    TArray<FOpenState> Open;
     const FIntPoint Origin(0, 0);
-    GroundZ.Add(Origin, OriginGround.Z);
-    CostSoFar.Add(Origin, 0.f);
-    Open.HeapPush({ Origin, Heuristic(Origin) }, ByCost);
+    const uint64 OriginKey = MakeStateKey(Origin, NoHeading, false);
+    States.Add(OriginKey).GroundZ = OriginGround.Z;
+    Open.HeapPush({ OriginKey, Heuristic(Origin) }, ByCost);
 
     const float SlopeTan = FMath::Max(FMath::Tan(FMath::DegreesToRadians(Profile->MaxSlopeDegrees * Query.SlopeMargin)), 0.01f);
-    static const FIntPoint Neighbours[] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1} };
+    // The neighbours go around in order, so two headings that are N apart in the list differ by N times 45 degrees
+    static const FIntPoint Neighbours[] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
+    constexpr int32 NumDirections = UE_ARRAY_COUNT(Neighbours);
     bool bFound = false;
-    FIntPoint Reached = Origin;
+    uint64 ReachedKey = OriginKey;
     int32 Expanded = 0;
+    const double SearchStartTime = FPlatformTime::Seconds();
     while (Open.Num() > 0)
     {
-        FOpenCell Current;
+        FOpenState Current;
         Open.HeapPop(Current, ByCost);
-        if (Current.Cost > CostSoFar[Current.Cell] + Heuristic(Current.Cell) + 0.01f)
+        const FSearchState State = States[Current.Key];
+        const FIntPoint CurrentCell = GetStateCell(Current.Key);
+        if (Current.Cost > State.Cost + Heuristic(CurrentCell) + 0.01f)
         {
             continue;
         }
-        if ((Current.Cell - GoalCell).SizeSquared() <= 2)
+        if ((CurrentCell - GoalCell).SizeSquared() <= 2)
         {
             bFound = true;
-            Reached = Current.Cell;
+            ReachedKey = Current.Key;
             break;
         }
         if (++Expanded >= Query.MaxCells)
@@ -167,43 +194,67 @@ TArray<FVector> UNsVehiclePathfinder::FindPath(const UObject* const WorldContext
             break;
         }
 
-        const FVector From(GridOrigin.X + Current.Cell.X * Spacing, GridOrigin.Y + Current.Cell.Y * Spacing, GroundZ[Current.Cell]);
-        for (const FIntPoint& Step : Neighbours)
+        const int32 Heading = static_cast<int32>((Current.Key >> 1) & 0xF);
+        const bool bTurnedInto = (Current.Key & 1) != 0;
+        const FVector From(GridOrigin.X + CurrentCell.X * Spacing, GridOrigin.Y + CurrentCell.Y * Spacing, State.GroundZ);
+        for (int32 Direction = 0; Direction < NumDirections; ++Direction)
         {
-            const FIntPoint Next = Current.Cell + Step;
-            const FVector Above(GridOrigin.X + Next.X * Spacing, GridOrigin.Y + Next.Y * Spacing, From.Z + Query.TraceHeight);
-            FVector Ground;
-            if (IsBlocked(Above, Query) || !FindGround(World, Above, Query.TraceHeight + Profile->MaxDropHeight, Query, Ground) || !CanStep(World, *Profile, From, Ground, Query, Current.Cell == Origin))
+            // A turn of more than 45 degrees in one step is tighter than the vehicle turns. So are two turns in a row when one step is shorter than the arc of a turn
+            const int32 Turn = Heading == NoHeading ? 0 : FMath::Min(FMath::Abs(Direction - Heading), NumDirections - FMath::Abs(Direction - Heading));
+            if (Profile->MinTurnRadius > 0.f && (Turn > 1 || (Turn == 1 && bTurnedInto)))
             {
                 continue;
             }
 
-            // A climb costs more, and a step beside a drop or water costs more, so the way keeps to gentle ground away from edges
-            const float Run = FVector::Dist2D(From, Ground);
-            const float Slope = FMath::Max(Ground.Z - From.Z, 0.f) / FMath::Max(Run, 1.f) / SlopeTan;
-            const float Edge = Query.EdgeCost > 0.f && IsNearEdge(World, *Profile, From, Ground, Query) ? Query.EdgeCost : 0.f;
-            const float NewCost = CostSoFar[Current.Cell] + Run * (1.f + Query.SlopeCost * Slope * Slope + Edge);
-            const float* const OldCost = CostSoFar.Find(Next);
-            if (OldCost == nullptr || NewCost < *OldCost)
+            const FIntPoint Next = CurrentCell + Neighbours[Direction];
+            // The key of a step is its start cell, its direction, and the height of its start, because a cell can have ground at two heights, for example under a bridge
+            const uint64 StepKey = MakeStateKey(CurrentCell, Direction, false) | (static_cast<uint64>(FMath::RoundToInt(From.Z / 5.f) & 0xFFFF) << 48);
+            FStepResult* Result = Steps.Find(StepKey);
+            if (Result == nullptr)
             {
-                CostSoFar.Add(Next, NewCost);
-                GroundZ.Add(Next, Ground.Z);
-                CameFrom.Add(Next, Current.Cell);
-                Open.HeapPush({ Next, NewCost + Heuristic(Next) }, ByCost);
+                Result = &Steps.Add(StepKey);
+                const FVector Above(GridOrigin.X + Next.X * Spacing, GridOrigin.Y + Next.Y * Spacing, From.Z + Query.TraceHeight);
+                FVector Ground = FVector::ZeroVector;
+                Result->bCanStep = !IsBlocked(Above, Query) && FindGround(World, Above, Query.TraceHeight + Profile->MaxDropHeight, Query, Ground) && CanStep(World, *Profile, From, Ground, Query, CurrentCell == Origin);
+                if (Result->bCanStep)
+                {
+                    // A climb costs more, and a step beside a drop or water costs more, so the way keeps to gentle ground away from edges
+                    const float Run = FVector::Dist2D(From, Ground);
+                    const float Slope = FMath::Max(Ground.Z - From.Z, 0.f) / FMath::Max(Run, 1.f) / SlopeTan;
+                    const float Edge = Query.EdgeCost > 0.f && IsNearEdge(World, *Profile, From, Ground, Query) ? Query.EdgeCost : 0.f;
+                    Result->GroundZ = Ground.Z;
+                    Result->Cost = Run * (1.f + Query.SlopeCost * Slope * Slope + Edge);
+                }
+            }
+            if (!Result->bCanStep)
+            {
+                continue;
+            }
+
+            const float NewCost = State.Cost + Result->Cost + Query.TurnCost * Turn;
+            const uint64 NextKey = MakeStateKey(Next, bTurns ? Direction : NoHeading, bTrackTurn && Turn > 0);
+            FSearchState* const Old = States.Find(NextKey);
+            if (Old == nullptr || NewCost < Old->Cost)
+            {
+                const FSearchState NextState = { Result->GroundZ, NewCost, Current.Key };
+                States.Add(NextKey, NextState);
+                Open.HeapPush({ NextKey, NewCost + Heuristic(Next) }, ByCost);
             }
         }
     }
 
+    UE_LOG(LogNsVehiclePath, Log, TEXT("FindPath expanded %d states and tested %d steps in %.2f s"), Expanded, Steps.Num(), FPlatformTime::Seconds() - SearchStartTime);
     if (!bFound)
     {
         UE_LOG(LogNsVehiclePath, Warning, TEXT("FindPath found no way from %s to %s with %s"), *Start.ToString(), *Goal.ToString(), *Profile->GetName());
         return Path;
     }
 
-    for (FIntPoint Cell = Reached; ; Cell = CameFrom[Cell])
+    for (uint64 Key = ReachedKey; ; Key = States[Key].CameFrom)
     {
-        Path.Add(FVector(GridOrigin.X + Cell.X * Spacing, GridOrigin.Y + Cell.Y * Spacing, GroundZ[Cell]));
-        if (Cell == Origin)
+        const FIntPoint Cell = GetStateCell(Key);
+        Path.Add(FVector(GridOrigin.X + Cell.X * Spacing, GridOrigin.Y + Cell.Y * Spacing, States[Key].GroundZ));
+        if (Key == OriginKey)
         {
             break;
         }
@@ -483,6 +534,17 @@ bool UNsVehiclePathfinder::IsNearEdge(const UWorld* const World, const UNsVehicl
         }
     }
     return false;
+}
+
+uint64 UNsVehiclePathfinder::MakeStateKey(const FIntPoint& Cell, const int32 Heading, const bool bTurnedInto)
+{
+    // Bit 0 is the turn, bits 1 to 4 the heading, bits 5 to 25 the Y cell, and bits 26 to 46 the X cell
+    return (static_cast<uint64>(Cell.X + CellKeyOffset) << 26) | (static_cast<uint64>(Cell.Y + CellKeyOffset) << 5) | (static_cast<uint64>(Heading & 0xF) << 1) | (bTurnedInto ? 1ull : 0ull);
+}
+
+FIntPoint UNsVehiclePathfinder::GetStateCell(const uint64 Key)
+{
+    return FIntPoint(static_cast<int32>((Key >> 26) & 0x1FFFFF) - CellKeyOffset, static_cast<int32>((Key >> 5) & 0x1FFFFF) - CellKeyOffset);
 }
 
 void UNsVehiclePathfinder::AddIgnored(FCollisionQueryParams& Params, const FNsVehiclePathQuery& Query)

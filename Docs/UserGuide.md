@@ -206,6 +206,8 @@ The drive mode steers to a point **Look Ahead Distance** ahead on the spline. Af
 
 The A* plan tests each step with a box of the profile size plus **Clearance** on each side, on the collision channel and the responses of the vehicle body. A fence, a prop, or a wall that stops the vehicle also stops the plan. The plan ignores the ground, pawns (they move), and triggers with no physics collision. Each step also tests the ground at its middle, so a short steep bump between two grid points stops the plan. A prop with no simple collision is invisible to the plan and to the vehicle, so give every prop simple collision. The plan stays away from drops and water when it can (**Edge Cost**), and from steep ground (**Slope Cost**).
 
+With **Min Turn Radius** on the profile, the plan turns at most 45 degrees in one grid step. When one grid step is shorter than the arc of a 45 degree turn at that radius, it also makes no two turns in a row. So the plan gives no tight zigzag, for example switchbacks on a steep bank, that the vehicle cannot follow. **Turn Cost** makes each turn cost more, for a way with fewer turns.
+
 The plan smooths the grid way: a straight line replaces grid points when the line passes the same tests. The driver steers to a point ahead on the way. That point moves farther ahead with the speed, so a fast vehicle does not weave. The driver holds **Max Drive Speed** on a straight way and slows to **Corner Speed** before a turn and at the goal. After a stall it drives backward, marks the stall place as blocked, and plans again from where it is. After a stall on a slope, the next plans use less of the slope limit, because the vehicle could not climb what the plan allowed. The next drive starts with the full margin again. After **Max Replans** new plans it gives up. `Get Last Stuck Cause` tells why: "blocked by" an actor, "cannot climb", or "no way left".
 
 From C++ or Python, call `UNsVehiclePathfinder::FindPath` to get the ground points of a way without a drive. Call `UNsVehiclePathfinder::SmoothPath` on the result for a way with fewer turns.
@@ -283,7 +285,7 @@ The value goes from the client to the server only. Other clients do not get it.
 
 The editor module `NsVehicleEditor` paints the ground that a vehicle reaches from a start point. Use it to see which places a wheel setup opens, and to find a way that you did not plan, before a player finds it. It is editor only.
 
-1. Make a **NsVehicle Reach Profile** data asset for each setup. Set the step height, the slope, the drop, the width, the height, and if it crosses water.
+1. Make a **NsVehicle Reach Profile** data asset for each setup. Set the step height, the slope, the drop, the width, the height, and if it crosses water. For Drive To, also set **Min Turn Radius**: drive the vehicle in a circle at full steering and measure the radius at the center of the body.
 2. In the editor console, run `NsVehicle.Reach X Y Z /Game/Path/Profile`. Green points show the reached ground.
 3. Add a second profile to compare: `NsVehicle.Reach X Y Z /Game/Path/Base /Game/Path/Compare`. Orange points show the ground that only the second profile reaches.
 4. With no editor open, run the commandlet: `-run=NsVehicleReach -Map=/Game/Maps/MyMap -Start=X,Y,Z -Profile=/Game/Path/Profile [-Compare=/Game/Path/Profile] -Out=C:/Path/Reach.csv [-Extent=20000]`. It loads the World Partition cells around the start and writes one point for each line.
@@ -537,6 +539,11 @@ The **Path Query** of Drive To:
 | Blocked Radius | 60 cm | The radius around each blocked point that the plan does not cross |
 | Clearance | 10 cm | The free space on each side of the vehicle that a step needs |
 | Wall Angle | 50 deg | A hit surface steeper than this angle is a wall. A flatter surface is ground |
+| Turn Cost | 0 cm | The extra cost of each turn of 45 degrees. Higher values give a way with fewer turns |
+| Heuristic Weight | 1 | The weight of the distance to the goal. 1 gives the cheapest way. A higher value can find a way sooner, but the way can be longer, and near a goal in rough ground it can search more |
+
+The **Min Turn Radius** of the reach profile (default 0 cm) is the tightest turn of the vehicle. At 0 the plan allows any turn, as before. The reach tool ignores it.
+
 | NsVehicleStaticWheel | Enabled | true | Spins the wheel |
 | NsVehicleStaticWheel | Invert Direction | false | Inverts the spin |
 | NsVehicleStaticWheel | Rotation Multiplier | 1 | Spin scale |
@@ -608,7 +615,9 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - The modules are fixed. You cannot remove a module or replace it with a subclass.
 - There is no clutch simulation.
 - The A* plan tests the same grid as the reach tool. A way that is narrower than the grid spacing can be missed.
-- The A* plan runs in one frame. A long way on a fine grid can take a second. Plan once, not each tick.
+- The A* plan runs in one frame. A long way on a fine grid can take some seconds. Plan once, not each tick.
+- The turn limit starts with no heading. The first step of a plan can go in any direction, so after a stall the first turn can be tighter than the vehicle turns. The driver drives backward before it plans again, which usually gives the room.
+- The plan allows any slope down when each step drops less than **Max Drop Height**. A long steep slope down can make the vehicle too fast for the next turn.
 - The plan knows the slope limit of the profile, not the real grip on each surface. A wet or loose surface can stop the vehicle on a way that the plan accepts. The driver then plans again.
 - The hunt list and the hunt tool are editor only.
 - The Vehicle AI tab drives the vehicle that the first player drives, or the vehicle nearest to the pawn of that player.

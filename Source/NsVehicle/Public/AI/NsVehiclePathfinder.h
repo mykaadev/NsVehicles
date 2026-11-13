@@ -70,6 +70,14 @@ struct NSVEHICLE_API FNsVehiclePathQuery
     /** A surface that the step sweep hits counts as a wall when it is steeper than this angle. A flatter surface is ground, which the ground and step tests judge */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "1.0", ClampMax = "89.0", Units = "deg"))
     float WallAngle;
+
+    /** The extra cost of each turn of 45 degrees, as a distance. At 0 a turn costs nothing. Higher values give a way with fewer turns */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "0.0", Units = "cm"))
+    float TurnCost;
+
+    /** The weight of the distance to the goal in the search. 1 gives the cheapest way. A higher value searches less ground and finds a way sooner, but the way can be a little longer */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Path", meta = (ClampMin = "1.0"))
+    float HeuristicWeight;
 };
 
 /** Which ground a random point can be on */
@@ -159,6 +167,12 @@ private:
     /** Fills the query params with the vehicle and the ignored actors */
     static void AddIgnored(FCollisionQueryParams& Params, const FNsVehiclePathQuery& Query);
 
+    /** Packs a grid cell, the heading into it, and whether the step into it was a turn into one key of the search */
+    static uint64 MakeStateKey(const FIntPoint& Cell, int32 Heading, bool bTurnedInto);
+
+    /** Returns the grid cell of a key of the search */
+    static FIntPoint GetStateCell(uint64 Key);
+
 // Variables
 private:
     /** The number of ground-like parts that one step sweep ignores before the step counts as blocked */
@@ -169,4 +183,10 @@ private:
 
     /** The height above and below the center from which a random point traces for the ground */
     static constexpr float RandomSearchHeight = 100000.f;
+
+    /** The heading of a search state that has no heading, at the start or when the search ignores turns */
+    static constexpr int32 NoHeading = 8;
+
+    /** The offset that makes a signed cell coordinate positive in a key of the search */
+    static constexpr int32 CellKeyOffset = 1 << 20;
 };

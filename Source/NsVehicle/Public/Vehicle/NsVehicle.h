@@ -27,7 +27,7 @@ class UNsVehicleTransmissionComponent;
 /**
  * Physics vehicle pawn. It owns the physics state and runs the vehicle modules in a fixed order.
  * Each system is a module component: Controls, Engine, Transmission, Drivetrain, Brakes, Steering,
- * BodyDynamics, Aerodynamics, AirControl, AntiGravity, IdleLock, Network, and Animation
+ * BodyDynamics, Aerodynamics, AirControl, AntiGravity, IdleLock, SelfRight, Network, and Animation
  */
 UCLASS()
 class NSVEHICLE_API ANsVehicle : public AAsyncTickPawn
@@ -43,6 +43,11 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
     //~ End AActor Interface
+
+    //~ Begin APawn Interface
+    virtual void PossessedBy(class AController* NewController) override;
+    virtual void UnPossessed() override;
+    //~ End APawn Interface
 
     //~ Begin AAsyncTickPawn Interface
     virtual void NativeAsyncTick(float DeltaTime) override;
@@ -91,6 +96,10 @@ public:
     /** Returns the idle lock module */
     UFUNCTION(BlueprintPure, Category = "NsVehicle|Modules")
     UNsVehicleIdleLockComponent* GetIdleLock() const;
+
+    /** Returns the module that finds an overturned vehicle and rolls it back */
+    UFUNCTION(BlueprintPure, Category = "NsVehicle|Modules")
+    class UNsVehicleSelfRightComponent* GetSelfRight() const;
 
     /** Returns the network module */
     UFUNCTION(BlueprintPure, Category = "NsVehicle|Modules")
@@ -246,6 +255,10 @@ protected:
     /** Holds the vehicle in place when it stops */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NsVehicle|Modules")
     TObjectPtr<UNsVehicleIdleLockComponent> IdleLock;
+
+    /** Finds an overturned vehicle and rolls it back with the steering */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NsVehicle|Modules")
+    TObjectPtr<class UNsVehicleSelfRightComponent> SelfRight;
 
     /** Replicates the vehicle state */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NsVehicle|Modules")

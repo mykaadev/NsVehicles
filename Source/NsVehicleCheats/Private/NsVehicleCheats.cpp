@@ -4,4 +4,6 @@
 
 #include "Modules/ModuleManager.h"
 
+DEFINE_LOG_CATEGORY(LogNsVehicleCheats);
+
 IMPLEMENT_MODULE(FNsVehicleCheatsModule, NsVehicleCheats)

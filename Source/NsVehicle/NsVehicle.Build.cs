@@ -24,6 +24,7 @@ public class NsVehicle : ModuleRules
 			{
 				"Slate",
 				"SlateCore",
+				"PhysicsCore",
 			}
 			);
 	}

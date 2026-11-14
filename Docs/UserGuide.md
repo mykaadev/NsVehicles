@@ -63,7 +63,8 @@ Each system is a module component on the vehicle. Select the module in the Compo
 | Aerodynamics | `Get Aerodynamics` | Adds the air drag in the standard powertrain |
 | AirControl | `Get Air Control` | Turns the vehicle in the air |
 | AntiGravity | `Get Anti Gravity` | Pulls the vehicle to the surface under it |
-| IdleLock | `Get Idle Lock` | Holds the vehicle in place when it stops |
+| IdleLock | `Get Idle Lock` | Holds the vehicle in place when it stops. The parked hold stops the physics of a vehicle that nobody drives |
+| SelfRight | `Get Self Right` | Finds an overturned vehicle, and rolls it back with the steering |
 | Network | `Get Network` | Replicates the vehicle state |
 | Animation | `Get Animation` | Spins the wheels for the take recorder |
 
@@ -292,6 +293,52 @@ The editor module `NsVehicleEditor` paints the ground that a vehicle reaches fro
 
 A drop is one way: the vehicle goes down it, and the tool does not let it go back up. A box of the vehicle size moves from point to point, so a wall, a narrow gap, or a low roof stops it.
 
+### Hold a parked vehicle still (parked hold)
+
+The idle lock holds a stopped vehicle with a force. The suspensions still push the body, so a vehicle on a slope or a vehicle with a lost wheel can creep. The parked hold stops the physics of a vehicle that nobody drives.
+
+1. On the IdleLock module, enable **Use Parked Hold**. In C++, call `GetIdleLock()->SetParkedHoldEnabled(true)` in the constructor.
+2. A vehicle that no player controls waits **Parked Settle Time**. When it rests on the ground and is slower than **Parked Max Speed**, its physics stops.
+3. A player who gets in gets the physics back at once.
+
+- During a cutscene, call `Set Treat As Parked` with true, so the vehicle holds still while a player still controls it. Call it with false at the end.
+- When something changes the stance, for example a lost or a new wheel, call `Release Parked Hold`. The vehicle settles on its wheels, then holds again.
+- When your code stops the physics for a while, for example for a scripted turn, the settle time starts again when the physics comes back.
+
+### Roll an overturned vehicle back (self right)
+
+1. On the SelfRight module, enable **Use Self Right**. In C++, call `GetSelfRight()->SetSelfRightEnabled(true)` in the constructor.
+2. Overturn the vehicle and steer. Each steering input adds a small hop and a roll to the side of the input, at most one time each **Roll Pulse Interval**.
+
+`Is Overturned` compares the up of the vehicle with the ground normal under it, so a vehicle on a slope is not overturned. It works also with **Use Self Right** off, for example to show a "Flip" prompt. `Is Body On Ground` tells if the body rests on the ground.
+
+### Scale the grip by the surface
+
+1. On each suspension component, enable **Scale Grip By Surface**. In C++, call `SetSurfaceGripScaling(true, ReferenceFriction, MinScale, MaxScale)`.
+2. Set **Grip Reference Friction** to the friction of your most common surface, so that surface keeps the grip of the wheel.
+3. Give each surface a physical material with its own **Friction**.
+
+The friction of the physical material under the wheel, over the reference friction, scales **Friction Coefficient** and **Max Lateral Force Scalar**. **Min Surface Grip Scale** and **Max Surface Grip Scale** limit the scale. A wheel in the air keeps the scale of its last surface. It works only with **Use With Drivetrain**, because only a drivetrain wheel uses these two values.
+
+### Play a motor sound
+
+1. Add an `NsVehicleMotorAudioComponent` to the vehicle, and set **Sound** to a looping sound.
+2. Set **Idle Pitch**, **Full Speed Pitch**, **Idle Volume**, **Full Speed Volume**, and **Full Speed Kph**.
+
+The sound fades in when a player gets in and fades out when the player gets out. Enable **Follow Engine RPM** to follow the RPM against the maximum RPM of the Engine module in place of the speed.
+
+### Show the vehicle values on a board (cheat)
+
+With the NsCheats plugin in the project, the **Vehicle AI** tab of the cheat window has the toggle **Show the vehicle values**. A board floats above the rear of the vehicle of the player and turns to the camera. It shows the speed, the gear, the RPM, the inputs, the holds, and for each wheel the compression, the contact, the physical material, and the grip scale. It works in Play In Editor and in development builds, not in Shipping.
+
+To give the board the look of your game:
+
+1. Make a Widget Blueprint with `NsVehicleValuesWidget` as the parent.
+2. Add a text block named `ValuesText`. The widget writes the values into it each frame, so the Blueprint needs no graph.
+3. In **Project Settings > Ns Vehicle Cheats**, set **Values Widget Class**, **Board Draw Size**, **Board Width Scale**, and **Board Offset**.
+
+For your own layout, read `Get Values` in the Blueprint. It returns one `FNsVehicleValues` struct.
+
 ### Record with the take recorder
 
 1. On the Animation module, enable **Enable Animation Mode**.
@@ -386,7 +433,7 @@ Every value is the default in the code. Some settings show only when another set
 | Steer Lean Min Speed | 5 | Speed in KPH for full lean |
 | Steer Lean Mapping | 0.9, 0.99 | Ground normal range for the lean strength |
 
-### Aerodynamics, Air Control, Anti Gravity, Idle Lock
+### Aerodynamics, Air Control, Anti Gravity, Idle Lock, Self Right
 
 | Module | Setting | Default | Effect |
 |---|---|---|---|
@@ -408,6 +455,17 @@ Every value is the default in the code. Some settings show only when another set
 | Idle Lock | Is Idle Locked | false | The hold state. Set it at runtime to control the hold |
 | Idle Lock | Idle Lock Speed Threshold | 10 | Speed in KPH below which the timer starts |
 | Idle Lock | Idle Lock Stiffness | 3000 | Hold force on slopes |
+| Idle Lock | Use Parked Hold | false | Stops the physics of a vehicle that nobody drives, after it lands and settles |
+| Idle Lock | Parked Settle Time | 1 | Seconds that a vehicle nobody drives settles before the hold test. A vehicle that fails the test waits one more settle time |
+| Idle Lock | Parked Max Speed | 20 | Highest speed in cm/s at which the parked hold can start |
+| Self Right | Use Self Right | false | The steering rolls an overturned vehicle back |
+| Self Right | Overturned Up Dot | 0.65 | Highest alignment of the vehicle up with the ground normal that counts as overturned |
+| Self Right | Roll Pulse Interval | 0.22 | Shortest time in seconds between two roll impulses |
+| Self Right | Hop Velocity | 150 | Vertical velocity change of one hop in cm/s |
+| Self Right | Roll Angular Impulse | 5 | Roll velocity change of one impulse at a full steering input |
+| Self Right | Max Vertical Speed | 30 | Highest vertical speed in cm/s that allows an impulse |
+| Self Right | Ground Reach | 3 | Distance in cm below the body bounds that still counts as ground |
+| Self Right | Ground Channel | Visibility | Trace channel of the ground test |
 
 ### Network and Animation
 
@@ -457,6 +515,10 @@ Every value is the default in the code. Some settings show only when another set
 | Debug | false | Draws the trace |
 | Use Idle Lock | true | Stops the wheel spin after a stop. Off with **Use With Drivetrain** |
 | Idle Lock Time | 1.5 | Seconds before the wheel spin stops |
+| Scale Grip By Surface | false | Scales the traction limit and the side grip of a drivetrain wheel by the friction of the physical material under it |
+| Grip Reference Friction | 0.7 | Friction that keeps the grip as it is. 0.7 is the friction of the default physical material |
+| Min Surface Grip Scale | 0.4 | Lowest grip scale |
+| Max Surface Grip Scale | 1.5 | Highest grip scale |
 
 With **Use With Drivetrain** on:
 
@@ -472,6 +534,27 @@ With **Use With Drivetrain** on:
 | Air Rotation Multiplier | 20 | Maximum wheel spin with throttle in the air |
 | In Air Speed Up | 10 | How fast the wheel spins up in the air |
 | In Air Slowdown Speed | 2 | How fast the wheel slows down in the air |
+
+### Motor audio component
+
+| Setting | Default | Effect |
+|---|---|---|
+| Idle Pitch | 0.7 | Pitch at rest |
+| Full Speed Pitch | 1.6 | Pitch at the full speed |
+| Idle Volume | 0.35 | Volume at rest |
+| Full Speed Volume | 0.8 | Volume at the full speed |
+| Full Speed Kph | 15 | Speed in KPH that gives the full speed pitch and volume |
+| Follow Engine RPM | false | Follows the RPM against the maximum RPM in place of the speed |
+| Fade Seconds | 0.3 | Fade time when a player gets in or out |
+
+### Vehicle cheats (Project Settings > Ns Vehicle Cheats)
+
+| Setting | Default | Effect |
+|---|---|---|
+| Values Widget Class | None | The widget of the values board. None uses a plain text board |
+| Board Draw Size | 480 x 320 | Size of the board widget in pixels |
+| Board Width Scale | 1 | Width of the board as a part of the width of the vehicle |
+| Board Offset | 0, 0, 0 | Offset in cm from the top of the rear of the vehicle, in the space of the vehicle |
 
 ### Interior, articulated, AI, and wheel components
 
@@ -583,7 +666,8 @@ The hunt list:
 - On a suspension component, enable **Debug**. The sphere trace draws as a capsule. Its color goes from green to red with the compression. A line trace draws in orange. The impact point draws in yellow.
 - On an `NsVehicleAI` component, enable **Draw Debug**. A blue sphere marks the vehicle, a red sphere marks the closest spline point, and a green line joins them.
 - All messages use the log category `LogTemp`. Search the Output Log for `NsVehicle`.
-- To show the state on screen, read `Get Speed KPH`, `Is In Air`, `Get RPM`, `Get Current Gear`, `Is Slipping`, or `Is Idle Locked`.
+- To show the state on screen, read `Get Speed KPH`, `Is In Air`, `Get RPM`, `Get Current Gear`, `Is Slipping`, `Is Idle Locked`, `Is Parked Held`, or `Is Overturned`.
+- With NsCheats, turn on **Show the vehicle values** on the **Vehicle AI** tab. A board above the rear of the vehicle shows the live values. See [Show the vehicle values on a board](#show-the-vehicle-values-on-a-board-cheat).
 
 The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.DriveTo` and `NsVehicle.DriveStop` run the drive-to tool, and `NsVehicle.Hunt` and `NsVehicle.HuntStop` run the hunt tool, in Play In Editor. The runtime has no console commands and no console variables. The editor tools log to `LogNsVehicleEditor`. The A* plan logs to `LogNsVehiclePath`: no way and the cell limit as Warning. The drive mode of `NsVehicleAI` logs to `LogNsVehicleAI`: an arrival as Display, and a stuck vehicle as Warning. With **Draw Debug**, the drive mode draws a yellow line to its steering point and shows its state on screen. The on-screen state is not in Shipping builds.
 
@@ -612,6 +696,10 @@ The editor console command `NsVehicle.Reach` runs the reach tool. `NsVehicle.Dri
 - Keep the actor scale at 1. The physics step ignores the actor scale, so a scaled vehicle puts the wheels in the wrong place.
 - Wheel detach and reattach are local. They do not replicate.
 - The vehicle finds its suspension, interior, and articulated components in Begin Play. It does not update components that you add later.
+- The parked hold and the self right are local. They change the physics of the body on this machine only. Use them in a single player game, or on the machine that simulates the vehicle.
+- The parked hold counts a vehicle as driven only when a player controls it. A vehicle that an AI controller drives holds still after the settle time.
+- The self right reads the steering input of the Controls module, so an AI that steers an overturned vehicle also rolls it.
+- The values board stays on the vehicle where it started. To move it to another vehicle, turn the toggle off and on.
 - `Event Async Tick` runs two times in each physics step. On a client in Full mode, it runs one time.
 - The custom inputs go to the server only.
 - The modules are fixed. You cannot remove a module or replace it with a subclass.

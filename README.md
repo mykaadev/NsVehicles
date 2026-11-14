@@ -94,7 +94,8 @@ void AMyPlayerController::DriveForward(ANsVehicle* Vehicle, const float Input)
 | Aerodynamics | `GetAerodynamics` | Adds the air drag in the standard powertrain |
 | AirControl | `GetAirControl` | Turns the vehicle in the air |
 | AntiGravity | `GetAntiGravity` | Pulls the vehicle to the surface under it |
-| IdleLock | `GetIdleLock` | Holds the vehicle in place when it stops |
+| IdleLock | `GetIdleLock` | Holds the vehicle in place when it stops. The parked hold stops the physics of a vehicle that nobody drives |
+| SelfRight | `GetSelfRight` | Finds an overturned vehicle, and rolls it back with the steering |
 | Network | `GetNetwork` | Replicates the vehicle state |
 | Animation | `GetAnimation` | Spins the wheels for the take recorder |
 

@@ -11,8 +11,8 @@ public class NsVehicleCheats : ModuleRules
     public NsVehicleCheats(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-        PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "NsVehicle" });
-        PrivateDependencyModuleNames.AddRange(new[] { "AssetRegistry" });
+        PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "DeveloperSettings", "NsVehicle", "UMG" });
+        PrivateDependencyModuleNames.AddRange(new[] { "AssetRegistry", "PhysicsCore", "Slate", "SlateCore" });
 
         // NsCheats is optional. Link it only when the plugin is present, so NsVehicles compiles alone
         // The search of the engine and the project does not see the additional plugin folders of the project, so a studio plugin next to NsVehicles counts too

@@ -14,7 +14,7 @@ The descriptor is `NsVehicle.uplugin`. It has three modules. The two runtime mod
 
 | Module | Type | Loading phase | Content |
 |---|---|---|---|
-| `NsVehicleCheats` | DeveloperTool | Default | `UNsVehicleCheatsSubsystem`, the Vehicle AI tab of the NsCheats window. It links `NsCheatsRuntime` only when the NsCheats plugin is present, and defines `WITH_NSCHEATS`. Without NsCheats the subsystem does not start |
+| `NsVehicleCheats` | DeveloperTool | Default | `UNsVehicleCheatsSubsystem`, the Vehicle AI tab of the NsCheats window. The values board: `UNsVehicleValuesWidget`, `UNsVehicleValuesBoardComponent`, and `UNsVehicleCheatsSettings`. It links `NsCheatsRuntime` only when the NsCheats plugin is present, and defines `WITH_NSCHEATS`. Without NsCheats the subsystem does not start |
 
 `UNsVehicleReachProfile` moved from `NsVehicleEditor` to `NsVehicle`. `Config/DefaultNsVehicle.ini` holds a class redirect, so the profile assets of a project load with no change.
 
@@ -31,7 +31,8 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 | `Modules/` | `UNsVehicleModuleComponent`, the base class of all modules |
 | `Modules/Control/` | `UNsVehicleControlsComponent` |
 | `Modules/Powertrain/` | `UNsVehicleEngineComponent`, `UNsVehicleTransmissionComponent`, `UNsVehicleDrivetrainComponent` |
-| `Modules/Chassis/` | `UNsVehicleBrakeComponent`, `UNsVehicleSteeringComponent`, `UNsVehicleBodyDynamicsComponent`, `UNsVehicleAerodynamicsComponent`, `UNsVehicleAirControlComponent`, `UNsVehicleAntiGravityComponent`, `UNsVehicleIdleLockComponent` |
+| `Modules/Chassis/` | `UNsVehicleBrakeComponent`, `UNsVehicleSteeringComponent`, `UNsVehicleBodyDynamicsComponent`, `UNsVehicleAerodynamicsComponent`, `UNsVehicleAirControlComponent`, `UNsVehicleAntiGravityComponent`, `UNsVehicleIdleLockComponent`, `UNsVehicleSelfRightComponent` |
+| `Audio/` | `UNsVehicleMotorAudioComponent` |
 | `Modules/Network/` | `UNsVehicleNetworkComponent` |
 | `Modules/Animation/` | `UNsVehicleAnimationComponent` |
 | `Wheels/` | `UNsVehicleSuspensionComponent`, `UNsVehicleStaticWheel`, `UNsVehicleWheel` |
@@ -42,7 +43,7 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 ### Main Classes
 
 - `ANsVehicle` derives from `AAsyncTickPawn`. It owns the physics state: the physics transform, the local velocity, the speed, the acceleration, the yaw rate, and the airborne state. It makes one of each module in its constructor and calls them in a fixed order. Its only tuning values are `InAirWheelCount` and `bAutoWakeRigidBodies`.
-- `UNsVehicleModuleComponent` is the abstract base of the 13 modules. A module does not tick. It caches the owner `ANsVehicle` in `OnRegister`. Its physics functions take values as arguments, or read them through the vehicle getters.
+- `UNsVehicleModuleComponent` is the abstract base of the 14 modules. A module does not tick. It caches the owner `ANsVehicle` in `OnRegister`. Its physics functions take values as arguments, or read them through the vehicle getters.
 - `UNsVehicleSuspensionComponent` is a scene component. It traces the ground, applies the spring, lateral, and resistance forces at its location, runs the slip model for a driven wheel, and places and spins its wheel mesh. The wheel scale applies to the sweep sphere, the trace length, the wheel height, and the wheel spin through `GetScaledWheelRadius`. A scale of 1 behaves as before.
 - `UNsVehicleInteriorComponent` is an abstract static mesh component. It maps one vehicle value to a rotation on one axis.
 - `UNsVehicleArticulatedComponent` is a static mesh component that moves on one axis from an input.
@@ -53,6 +54,11 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 - `UNsVehicleReachLibrary::MakeQuery` makes the query of the editor tools from the settings: margin 1 and no edge cost for the reach tool, the path settings for the drive-to tool and the hunt.
 - `UNsVehicleHuntRunner` is a transient object that the editor module keeps. It ticks on the core ticker, starts one Drive To after the other, tests the no-go boxes each tick, and writes the report when the list ends, when Play In Editor ends, or on `NsVehicle.HuntStop`.
 - `UNsVehicleStaticWheel` spins its mesh from the root velocity in its own tick. It does not need `ANsVehicle`.
+- The parked hold of `UNsVehicleIdleLockComponent` runs on the game thread, because `SetSimulatePhysics` works only there. `UpdateParkedHold` counts the settle time while no player drives (`IsDriven` is false) and the body simulates. After **Parked Settle Time** it tests the ground (`IsInAir`, or `UNsVehicleSelfRightComponent::IsBodyOnGround` for a body that rests on its belly) and the speed. On a pass it zeroes the velocities and turns the simulation off. On a fail it starts the settle time again. `ReleaseParkedHold` turns the simulation back on with zero velocities, and starts the settle time again. `SetTreatAsParked` makes a player-controlled vehicle count as parked.
+- `UNsVehicleSelfRightComponent` traces a line from the center of the body bounds down to **Ground Reach** below the bounds. `IsOverturned` compares the up of the body with the hit normal, or with the world up when the trace hits nothing. `UpdateSelfRight` calls `TryRollFromSteering` with the steering input of the Controls module. It adds a velocity change up and an angular velocity change around the body forward when the body is overturned, on the ground, slower than **Max Vertical Speed** up or down, and the pulse interval is over.
+- With **Scale Grip By Surface**, a suspension component reads the friction of the physical material of its hit after each trace in the physics step. It multiplies **Friction Coefficient** and **Max Lateral Force Scalar** by the clamped ratio to **Grip Reference Friction** where the drivetrain slip model uses them. The stored values do not change, so a game can set them for a new tire at any time.
+- `UNsVehicleMotorAudioComponent` is a `UAudioComponent`. It binds `ReceiveControllerChangedDelegate` of the owner pawn, fades in when a player controls the pawn, and ticks only while it plays.
+- The values board: `UNsVehicleCheatsSubsystem::SetShowValues` makes a transient `UNsVehicleValuesBoardComponent` (a world space `UWidgetComponent` with no collision) on the vehicle of the player. It sizes the board from the local bounds of the vehicle root and places it on the top of the rear. It has an absolute rotation, and turns its X axis to the camera of the first player each tick. `UNsVehicleValuesWidget` reads the vehicle with `ReadValues` and writes the text into `ValuesText` each tick. With no layout, it builds that text block in `NativeOnInitialized`.
 - `UNsVehicleWheel` is a static mesh with the tag `NsVehicleWheel`. The Animation module spins it.
 
 ### Physics Step Order
@@ -87,6 +93,10 @@ The drive force acts at the body center of mass through `ATP_AddForce`. The whee
 4. `AntiGravity->UpdateGameThread`.
 5. The game thread local velocity for `GetSideSlipAngleGT`.
 6. `Animation->UpdateLocationVelocity`, and `SpinSuspensionWheels` in animation mode.
+7. `IdleLock->UpdateParkedHold`.
+8. `SelfRight->UpdateSelfRight`.
+
+`ANsVehicle::PossessedBy` and `UnPossessed` call `IdleLock->RefreshParkedHold`: a player who gets in gets the physics back at once.
 
 ### Data Flow
 
@@ -100,7 +110,7 @@ The arcade powertrain uses the active gear ratio (3) and the active differential
 
 1. The `NsVehicle` module and the `AsyncTickPhysics` module load in the Default phase.
 2. `FAsyncTickPhysicsModule::StartupModule` binds to `FPhysicsDelegates::OnPhysSceneInit` and `OnPhysSceneTerm`. It makes one `FAsyncTickManager` for each physics scene, and deletes it when the scene ends.
-3. The `ANsVehicle` constructor makes the 13 modules with `CreateDefaultSubobject`. Their subobject names are `Controls`, `Engine`, `Transmission`, `Drivetrain`, `Brakes`, `Steering`, `BodyDynamics`, `Aerodynamics`, `AirControl`, `AntiGravity`, `IdleLock`, `Network`, and `Animation`. It also sets the net update frequency and the minimum net update frequency to 100.
+3. The `ANsVehicle` constructor makes the 14 modules with `CreateDefaultSubobject`. Their subobject names are `Controls`, `Engine`, `Transmission`, `Drivetrain`, `Brakes`, `Steering`, `BodyDynamics`, `Aerodynamics`, `AirControl`, `AntiGravity`, `IdleLock`, `SelfRight`, `Network`, and `Animation`. It also sets the net update frequency and the minimum net update frequency to 100.
 4. Each module caches its owner in `OnRegister`. It logs an error if the owner is not an `ANsVehicle`.
 5. `AAsyncTickPawn::BeginPlay` adds the pawn to the async tick manager. `EndPlay` removes it.
 6. `ANsVehicle::BeginPlay` caches the root as the physics body. It finds the suspension, interior, and articulated components with `GetComponents`. Components added later are not in these lists.
@@ -133,12 +143,15 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 | `Core`, `CoreUObject`, `Engine` | Public, `NsVehicle` | Base types, components, and physics |
 | `AsyncTickPhysics` | Public, `NsVehicle` | `ANsVehicle` derives from `AAsyncTickPawn` and calls `UAsyncTickFunctions` |
 | `Slate`, `SlateCore` | Private, `NsVehicle` | Listed in `NsVehicle.Build.cs`. No `NsVehicle` source file uses them |
+| `PhysicsCore` | Private, `NsVehicle` | The friction of the physical material for the surface grip |
 | `Core` | Public, `AsyncTickPhysics` | Base types |
 | `CoreUObject`, `Engine`, `Slate`, `SlateCore`, `Chaos` | Private, `AsyncTickPhysics` | Physics scene delegates and the Chaos sim callback |
 
 | `Core`, `CoreUObject`, `Engine`, `DeveloperSettings` | Public, `NsVehicleEditor` | The profile, the settings, and the queries |
 | `UnrealEd` | Private, `NsVehicleEditor` | The map load, the commandlet, and the Play In Editor world of the drive-to tool and the hunt tool |
 | `NsVehicle`, `AssetRegistry` | Public and private, `NsVehicleCheats` | The driver and the profile and hunt list search |
+| `UMG`, `DeveloperSettings` | Public, `NsVehicleCheats` | The values board widget and its settings |
+| `PhysicsCore`, `Slate`, `SlateCore` | Private, `NsVehicleCheats` | The surface name and the text block of the values board |
 | `NsCheatsRuntime` (plugin NsCheats, optional) | Private, `NsVehicleCheats` | The cheat tab and the point picker. The `.uplugin` lists NsCheats as an optional plugin |
 | `NsVehicle` | Private, `NsVehicleEditor` | `ANsVehicle`, `UNsVehicleAI`, `UNsVehiclePathfinder`, and the profile |
 
@@ -152,6 +165,10 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 - `UNsVehicleStaticWheel` reads the local bounds of its mesh every frame.
 - `GetSuspension` returns a copy of the array. Do not call it in a hot loop.
 - `bAutoWakeRigidBodies` wakes the body every frame.
+- The parked hold adds a few comparisons each frame, and one body trace each settle time when the vehicle is in the air.
+- The self right does nothing while it is off or while the steering input is 0. Else each frame does up to two line traces. `IsOverturned` does one line trace for each call.
+- The surface grip reads one physical material for each wheel in each physics step.
+- The values board ticks only while it shows. Each tick reads the vehicle values, copies the suspension list, and formats one text.
 - The reach tool runs only in the editor. Each tested point does one line trace, one sweep, and one overlap for water. A 400 by 400 m area at 50 cm is about 640000 points, so use a larger grid spacing or an extent for a first look.
 - `FindPath` tests each neighbor of each expanded state, so it can test a cell more than one time. It keeps the result of each step test, so a step runs its traces one time, also when the turn limit expands a cell for more than one heading. It stops at **Max Cells** expanded states. A goal far behind a wall can expand most of the reach area before the search fails. It runs in one frame on the game thread. It logs the expanded states, the tested steps, and the time to `LogNsVehiclePath` at Log verbosity.
 - In one test level, a 230 m way at 50 cm takes about 5 s with or without the turn limit (about 30000 cells, or about 340000 states with headings, and about 230000 step tests). The step traces are most of the time.
@@ -179,6 +196,7 @@ The physics step branch:
 - `AsyncReplicatedTick` is a separate Blueprint call. On the server it copies the body velocities to `ServerVelocity` and `ServerAngularVelocity`. On a client it applies them. The vehicle does not call it.
 - The custom inputs go from the client to the server. They do not replicate to other clients.
 - `DetachWheel` and `ReattachWheel` are local only.
+- The parked hold and the self right are local only. They change the body on the machine that runs them.
 - Drive To and the A* plan are local. Run them on the machine that owns the vehicle input.
 
 ## Testing
@@ -189,6 +207,10 @@ The plugin has no automated tests. Use these manual tests:
 2. Drive To: in Play In Editor, run `NsVehicle.DriveTo X Y Z /Game/Path/Profile` to a goal behind a fence. Make sure that the way goes around the fence and that the vehicle arrives.
 3. Stall: steer against the drive for some seconds. Make sure that the vehicle backs off, plans again, and continues.
 4. Hunt: run `NsVehicle.Hunt` with a list of two targets and one no-go box on the way. Make sure that the report lists both drives and the zone entry.
+5. Parked hold: with **Use Parked Hold** on, get out of the vehicle on a slope. Make sure that **Show the vehicle values** shows the parked hold after the settle time, and that the vehicle does not creep. Get in, and make sure that it drives at once.
+6. Self right: with **Use Self Right** on, overturn the vehicle and steer. Make sure that it rolls back onto its wheels and does not fly.
+7. Surface grip: with **Scale Grip By Surface** on, drive from a surface with a low friction to one with a high friction. Make sure that the grip scale on the values board changes.
+8. Motor audio: get in and out. Make sure that the sound fades in and out, and that the pitch follows the speed.
 
 ## Change Rules
 
@@ -197,3 +219,5 @@ The plugin has no automated tests. Use these manual tests:
 - `FindRandomPoint` traces down from 1 km above the center at random places in the circle. Under water allowed, the trace ignores a water body and goes on to the bed.
 - Keep the field names of the profile, the hunt list, and `FNsVehiclePathQuery`. Projects store them in data assets.
 - Keep the console command names. Test scripts of projects call them.
+- Keep the module subobject names, `SelfRight` included. Blueprints store the module values by these names.
+- Keep the cheat ids, for example `NsVehicle.Cheats.ShowValues`. Test scripts run them with `ExecuteEntry`.

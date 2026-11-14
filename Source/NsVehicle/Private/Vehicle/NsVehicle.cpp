@@ -13,6 +13,7 @@
 #include "Modules/Chassis/NsVehicleBodyDynamicsComponent.h"
 #include "Modules/Chassis/NsVehicleBrakeComponent.h"
 #include "Modules/Chassis/NsVehicleIdleLockComponent.h"
+#include "Modules/Chassis/NsVehicleSelfRightComponent.h"
 #include "Modules/Chassis/NsVehicleSteeringComponent.h"
 #include "Modules/Control/NsVehicleControlsComponent.h"
 #include "Modules/Network/NsVehicleNetworkComponent.h"
@@ -39,6 +40,7 @@ ANsVehicle::ANsVehicle()
     AirControl = CreateDefaultSubobject<UNsVehicleAirControlComponent>(TEXT("AirControl"));
     AntiGravity = CreateDefaultSubobject<UNsVehicleAntiGravityComponent>(TEXT("AntiGravity"));
     IdleLock = CreateDefaultSubobject<UNsVehicleIdleLockComponent>(TEXT("IdleLock"));
+    SelfRight = CreateDefaultSubobject<UNsVehicleSelfRightComponent>(TEXT("SelfRight"));
     Network = CreateDefaultSubobject<UNsVehicleNetworkComponent>(TEXT("Network"));
     Animation = CreateDefaultSubobject<UNsVehicleAnimationComponent>(TEXT("Animation"));
 }
@@ -91,6 +93,22 @@ void ANsVehicle::Tick(float DeltaTime)
     {
         Animation->SpinSuspensionWheels(SuspensionComponents);
     }
+
+    // Both change the physics state of the body, which works only on the game thread
+    IdleLock->UpdateParkedHold(DeltaTime);
+    SelfRight->UpdateSelfRight();
+}
+
+void ANsVehicle::PossessedBy(AController* NewController)
+{
+    Super::PossessedBy(NewController);
+    IdleLock->RefreshParkedHold();
+}
+
+void ANsVehicle::UnPossessed()
+{
+    Super::UnPossessed();
+    IdleLock->RefreshParkedHold();
 }
 
 void ANsVehicle::NativeAsyncTick(float DeltaTime)
@@ -202,6 +220,11 @@ UNsVehicleAntiGravityComponent* ANsVehicle::GetAntiGravity() const
 UNsVehicleIdleLockComponent* ANsVehicle::GetIdleLock() const
 {
     return IdleLock;
+}
+
+UNsVehicleSelfRightComponent* ANsVehicle::GetSelfRight() const
+{
+    return SelfRight;
 }
 
 UNsVehicleNetworkComponent* ANsVehicle::GetNetwork() const

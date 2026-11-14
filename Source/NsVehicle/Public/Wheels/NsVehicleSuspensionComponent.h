@@ -155,6 +155,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
     void SetMaxLateralForceScalar(float InMaxLateralForceScalar);
 
+    /** Turns on or off the surface grip, and sets its values. The friction of the physical material under the wheel, over the reference friction, scales the traction limit and the side grip of a drivetrain wheel */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
+    void SetSurfaceGripScaling(bool bEnabled, float InReferenceFriction, float InMinScale, float InMaxScale);
+
+    /** Returns the grip scale of the surface under the wheel. It is 1 with the surface grip off. A wheel in the air keeps the scale of its last surface */
+    UFUNCTION(BlueprintPure, Category = "NsVehicleSuspensionComponent")
+    float GetSurfaceGripScale() const;
+
     /** Returns the wheel spin multiplier */
     float GetAngularVelocityMultiplier();
 
@@ -229,6 +237,9 @@ private:
 
     /** Logs warnings for a suspension setup that cannot hold the vehicle */
     void ValidateSuspensionSetup() const;
+
+    /** Reads the grip scale from the physical material of the current hit */
+    void UpdateSurfaceGripScale();
 
 // Variables
 public:
@@ -534,6 +545,25 @@ private:
     /** The time in seconds after a stop before the wheel spin locks */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Suspension|IdleLock", meta = (AllowPrivateAccess = "true"), meta = (EditCondition = "bUseWithDrivetrain==false", EditConditionHides))
     float IdleLockTime = 1.5f;
+
+    /** Scales the traction limit and the side grip of a drivetrain wheel by the friction of the physical material under it */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Suspension|Surface Grip", meta = (AllowPrivateAccess = "true", EditCondition = "bUseWithDrivetrain==true"))
+    bool bScaleGripBySurface;
+
+    /** The friction of a physical material that keeps the grip as it is. A surface with more friction grips more */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Suspension|Surface Grip", meta = (AllowPrivateAccess = "true", ClampMin = "0.01", EditCondition = "bScaleGripBySurface"))
+    float GripReferenceFriction;
+
+    /** The lowest grip scale, so no surface leaves the wheel with no grip at all */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Suspension|Surface Grip", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", EditCondition = "bScaleGripBySurface"))
+    float MinSurfaceGripScale;
+
+    /** The highest grip scale */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Suspension|Surface Grip", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", EditCondition = "bScaleGripBySurface"))
+    float MaxSurfaceGripScale;
+
+    /** The grip scale of the surface under the wheel now */
+    float SurfaceGripScale;
 
     /** True when the wheel spin is locked */
     bool bIsIdleLocked = false;

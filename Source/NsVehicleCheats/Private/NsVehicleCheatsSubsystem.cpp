@@ -2,6 +2,7 @@
 
 #include "NsVehicleCheatsSubsystem.h"
 
+#include "NsVehicleCheats.h"
 #include "AI/NsVehicleAI.h"
 #include "AI/NsVehiclePathfinder.h"
 #include "AI/NsVehicleReachProfile.h"
@@ -13,13 +14,13 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "NsVehicleValuesBoardComponent.h"
 #include "Vehicle/NsVehicle.h"
 
 #if WITH_NSCHEATS
 #include "NsCheatsSubsystem.h"
 #endif
 
-DEFINE_LOG_CATEGORY_STATIC(LogNsVehicleCheats, Log, All);
 
 #define LOCTEXT_NAMESPACE "NsVehicleCheats"
 
@@ -51,6 +52,7 @@ void UNsVehicleCheatsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UNsVehicleCheatsSubsystem::Deinitialize()
 {
+    SetShowValues(false);
 #if WITH_NSCHEATS
     const UGameInstance* const GameInstance = GetWorld() != nullptr ? GetWorld()->GetGameInstance() : nullptr;
     if (UNsCheatsSubsystem* const Cheats = GameInstance != nullptr ? GameInstance->GetSubsystem<UNsCheatsSubsystem>() : nullptr)
@@ -109,6 +111,12 @@ void UNsVehicleCheatsSubsystem::RegisterCheats()
             LOCTEXT("RepeatHereDescription", "Drives to the goal of the last drive from where the vehicle is now."))
         .Button(TEXT("NsVehicle.Cheats.Stop"), LOCTEXT("Stop", "Stop the drive"),
             FNsCheatExecuteDelegate::CreateUObject(this, &ThisClass::StopDrive));
+
+    Builder.Section(TEXT("Values"))
+        .Toggle(TEXT("NsVehicle.Cheats.ShowValues"), LOCTEXT("ShowValues", "Show the vehicle values"),
+            FNsCheatGetBoolDelegate::CreateLambda([WeakThis]() { return WeakThis.IsValid() && WeakThis->ValuesBoard.IsValid(); }),
+            FNsCheatSetBoolDelegate::CreateLambda([WeakThis](const bool bValue) { if (WeakThis.IsValid()) { WeakThis->SetShowValues(bValue); } }),
+            LOCTEXT("ShowValuesDescription", "Shows the speed, the gear, the inputs, and each wheel on a board above the rear of the vehicle. The board turns to the camera."));
 
     Builder.Section(TEXT("Report"))
         .DebugText(TEXT("NsVehicle.Cheats.Status"), LOCTEXT("Status", "Drive status"),
@@ -244,6 +252,32 @@ void UNsVehicleCheatsSubsystem::SaveDriveReport()
     const UNsVehicleAI* const AI = FindOrAddAI();
     const FString Path = AI != nullptr ? AI->SaveDriveReport() : FString();
     Notify(Path.IsEmpty() ? TEXT("No drive to report") : FString::Printf(TEXT("Drive report: %s"), *Path), Path.IsEmpty());
+}
+
+void UNsVehicleCheatsSubsystem::SetShowValues(const bool bShow)
+{
+    if (UNsVehicleValuesBoardComponent* const Board = ValuesBoard.Get())
+    {
+        Board->DestroyComponent();
+    }
+    ValuesBoard.Reset();
+    if (!bShow)
+    {
+        return;
+    }
+
+    ANsVehicle* const Vehicle = FindPlayerVehicle();
+    if (Vehicle == nullptr || Vehicle->GetRootComponent() == nullptr)
+    {
+        Notify(TEXT("The values board needs a vehicle of the player"), true);
+        return;
+    }
+
+    UNsVehicleValuesBoardComponent* const Board = NewObject<UNsVehicleValuesBoardComponent>(Vehicle, NAME_None, RF_Transient);
+    Board->SetupBoard(Vehicle);
+    Board->SetupAttachment(Vehicle->GetRootComponent());
+    Board->RegisterComponent();
+    ValuesBoard = Board;
 }
 
 ANsVehicle* UNsVehicleCheatsSubsystem::FindPlayerVehicle() const

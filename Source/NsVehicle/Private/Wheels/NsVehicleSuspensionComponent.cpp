@@ -9,6 +9,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Engine/CollisionProfile.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 
 #include "Physics/Experimental/PhysScene_Chaos.h"
 
@@ -21,6 +22,12 @@ UNsVehicleSuspensionComponent::UNsVehicleSuspensionComponent()
     PrimaryComponentTick.bCanEverTick = true;
 
     ComponentTags.Add(FName("NsVehicleSuspensionComponent"));
+
+    bScaleGripBySurface = false;
+    GripReferenceFriction = 0.7f;
+    MinSurfaceGripScale = 0.4f;
+    MaxSurfaceGripScale = 1.5f;
+    SurfaceGripScale = 1.f;
     /*
 #if WITH_EDITOR
     WheelMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Wheel Mesh"));
@@ -634,6 +641,12 @@ void UNsVehicleSuspensionComponent::UpdatePhysics(float DeltaTime, float transmi
     float compression = 1 - (CurrentLength / length);
     OutCompression = compression;
 
+    // A wheel in the air keeps the grip of its last surface
+    if (Hit.bBlockingHit)
+    {
+        UpdateSurfaceGripScale();
+    }
+
     float velocity = (compression - PreviousCompression) / AsyncTime;
 
     float force = (compression * Stiffness) + (Damping * velocity);
@@ -691,7 +704,7 @@ void UNsVehicleSuspensionComponent::UpdatePhysics(float DeltaTime, float transmi
             AppliedTorque = transmittedTorque * TorqueReceived;
 
             float deltaX = (ExtensionLength - CurrentLength) * (1.f / 100.f);
-            float ffMax = deltaX * Stiffness * FrictionCoefficient;
+            float ffMax = deltaX * Stiffness * FrictionCoefficient * SurfaceGripScale;
 
 
             FrRatio = AppliedTorque / ffMax;
@@ -700,7 +713,7 @@ void UNsVehicleSuspensionComponent::UpdatePhysics(float DeltaTime, float transmi
             Gamma = FrRatio > 1.f;
 
             DynamicAngularVelocity = Gamma ? SlippingAngularVelocity : 1.f;
-            DynamicLateralForce = Gamma ? SlippingLateralForceScalar : MaxLateralForceScalar;
+            DynamicLateralForce = Gamma ? SlippingLateralForceScalar : MaxLateralForceScalar * SurfaceGripScale;
             float slipInterp = FMath::Lerp(slipBackwards, slipForward, throttle);
 
             ThrottleSlipGamma = FMath::FInterpTo(ThrottleSlipGamma, throttle, AsyncTime, slipInterp);
@@ -915,6 +928,36 @@ void UNsVehicleSuspensionComponent::SetFrictionCoefficient(const float InFrictio
 void UNsVehicleSuspensionComponent::SetMaxLateralForceScalar(const float InMaxLateralForceScalar)
 {
     MaxLateralForceScalar = FMath::Max(InMaxLateralForceScalar, 0.f);
+}
+
+void UNsVehicleSuspensionComponent::SetSurfaceGripScaling(const bool bEnabled, const float InReferenceFriction, const float InMinScale, const float InMaxScale)
+{
+    bScaleGripBySurface = bEnabled;
+    GripReferenceFriction = FMath::Max(InReferenceFriction, 0.01f);
+    MinSurfaceGripScale = FMath::Max(InMinScale, 0.f);
+    MaxSurfaceGripScale = FMath::Max(InMaxScale, MinSurfaceGripScale);
+    if (!bEnabled)
+    {
+        SurfaceGripScale = 1.f;
+    }
+}
+
+float UNsVehicleSuspensionComponent::GetSurfaceGripScale() const
+{
+    return SurfaceGripScale;
+}
+
+void UNsVehicleSuspensionComponent::UpdateSurfaceGripScale()
+{
+    if (!bScaleGripBySurface)
+    {
+        SurfaceGripScale = 1.f;
+        return;
+    }
+
+    // A surface with no physical material keeps the grip of the wheel
+    const UPhysicalMaterial* const Material = Hit.PhysMaterial.Get();
+    SurfaceGripScale = Material != nullptr ? FMath::Clamp(Material->Friction / FMath::Max(GripReferenceFriction, 0.01f), MinSurfaceGripScale, MaxSurfaceGripScale) : 1.f;
 }
 
 float UNsVehicleSuspensionComponent::GetAngularVelocityMultiplier()

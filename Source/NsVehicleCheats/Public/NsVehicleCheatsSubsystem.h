@@ -8,6 +8,7 @@
 
 /**
  * The Vehicle AI tab of the NsCheats window: drive the vehicle of the player to a picked point or a random point with Drive To, watch the drive, repeat it, and save its report
+ * It also shows the live values of the vehicle of the player on a board in the world, above the rear of the vehicle
  * It registers only when the NsCheats plugin is present. It does not exist in Shipping builds
  */
 UCLASS()
@@ -53,6 +54,10 @@ public:
     /** Writes the report of the last drive to the Saved/QA folder */
     UFUNCTION(BlueprintCallable, Category = "NsVehicle|Cheats")
     void SaveDriveReport();
+
+    /** Shows or hides the values board on the vehicle of the player */
+    UFUNCTION(BlueprintCallable, Category = "NsVehicle|Cheats")
+    void SetShowValues(bool bShow);
 
 private:
     /** Registers the entries of the Vehicle AI tab */
@@ -104,4 +109,7 @@ private:
 
     /** The picked hunt list, as its object path */
     FName PickedHunt;
+
+    /** The values board on the vehicle of the player, while the board shows */
+    TWeakObjectPtr<class UNsVehicleValuesBoardComponent> ValuesBoard;
 };

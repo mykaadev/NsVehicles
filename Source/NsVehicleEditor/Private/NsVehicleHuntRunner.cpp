@@ -3,6 +3,7 @@
 #include "NsVehicleHuntRunner.h"
 
 #include "AI/NsVehicleAI.h"
+#include "AI/NsVehicleReachProfile.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"

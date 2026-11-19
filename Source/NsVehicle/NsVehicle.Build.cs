@@ -18,14 +18,14 @@ public class NsVehicle : ModuleRules
             }
             );
 
-    	
-		PrivateDependencyModuleNames.AddRange(
-			new string[]
-			{
-				"Slate",
-				"SlateCore",
-				"PhysicsCore",
-			}
-			);
-	}
+        
+        PrivateDependencyModuleNames.AddRange(
+            new string[]
+            {
+                "Slate",
+                "SlateCore",
+                "PhysicsCore",
+            }
+            );
+    }
 }

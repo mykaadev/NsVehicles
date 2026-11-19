@@ -665,7 +665,8 @@ The hunt list:
 
 - On a suspension component, enable **Debug**. The sphere trace draws as a capsule. Its color goes from green to red with the compression. A line trace draws in orange. The impact point draws in yellow.
 - On an `NsVehicleAI` component, enable **Draw Debug**. A blue sphere marks the vehicle, a red sphere marks the closest spline point, and a green line joins them.
-- All messages use the log category `LogTemp`. Search the Output Log for `NsVehicle`.
+- The log categories are `LogNsVehicleAI`, `LogNsVehiclePath`, `LogNsVehicleCheats`, and `LogNsVehicleEditor` (editor). The vehicle and wheel components still log to `LogTemp`: search the Output Log for `NsVehicle`.
+- `LogNsVehicleCheats` writes the result of each vehicle cheat, and an error when the values board has a vehicle with no primitive root.
 - To show the state on screen, read `Get Speed KPH`, `Is In Air`, `Get RPM`, `Get Current Gear`, `Is Slipping`, `Is Idle Locked`, `Is Parked Held`, or `Is Overturned`.
 - With NsCheats, turn on **Show the vehicle values** on the **Vehicle AI** tab. A board above the rear of the vehicle shows the live values. See [Show the vehicle values on a board](#show-the-vehicle-values-on-a-board-cheat).
 

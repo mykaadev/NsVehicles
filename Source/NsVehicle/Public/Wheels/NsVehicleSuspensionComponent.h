@@ -193,7 +193,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
     void RecalculateWheelRadius();
 
-    /** Read the center of the wheel mesh for the ground test. */
+    /** Read the center of the wheel mesh for the ground test */
     void UpdateWheelLateralOffset();
 
     /** Places, steers, and spins the wheel mesh on the game thread. ANsVehicle calls it every frame */
@@ -502,7 +502,7 @@ private:
     /** The sphere for the suspension trace */
     FCollisionShape SweepShape;
 
-    /** Distance along the right axis from this component to the center of the wheel mesh. */
+    /** Distance along the right axis from this component to the center of the wheel mesh */
     float WheelLateralOffset = 0.f;
 
     /** The local direction from the contact to the suspension */

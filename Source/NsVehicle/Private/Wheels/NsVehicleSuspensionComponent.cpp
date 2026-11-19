@@ -345,6 +345,7 @@ void UNsVehicleSuspensionComponent::UpdateTick(float DeltaTime)
     }
 
 
+#if ENABLE_DRAW_DEBUG
     if (bDebug)
     {
         UWorld* const World = GetWorld();
@@ -389,6 +390,7 @@ void UNsVehicleSuspensionComponent::UpdateTick(float DeltaTime)
             }
         }
     }
+#endif
 
 
 }

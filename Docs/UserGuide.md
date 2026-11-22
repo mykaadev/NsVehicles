@@ -120,6 +120,12 @@ FrontLeftWheel->DetachWheel(FVector(0.f, -600.f, 400.f));
 
 The wheel mesh becomes a free physics body with the velocity of the vehicle at that point. The suspension stops all its forces. The vehicle ignores detached wheels when it counts airborne wheels.
 
+To show your own loose wheel actor, set **Release Wheel Body** to false. The suspension stops its forces, and the wheel mesh stays on the suspension, hidden, with no collision. **Impulse** has no effect then.
+
+```cpp
+FrontLeftWheel->DetachWheel(FVector::ZeroVector, false);
+```
+
 ### Attach a detached wheel again
 
 1. Call `Reattach Wheel` on the same suspension component.
@@ -326,6 +332,14 @@ The friction of the physical material under the wheel, over the reference fricti
 2. Set **Idle Pitch**, **Full Speed Pitch**, **Idle Volume**, **Full Speed Volume**, and **Full Speed Kph**.
 
 The sound fades in when a player gets in and fades out when the player gets out. Enable **Follow Engine RPM** to follow the RPM against the maximum RPM of the Engine module in place of the speed.
+
+### Play the roll sound of the surface
+
+1. Add an `NsVehicleSurfaceAudioComponent` to the vehicle.
+2. In **Roll Loops**, add one looping sound for each surface type. Set **Default Roll Loop** for the other surfaces.
+3. Optional: set **Water Surface** and **Splash Sound**.
+
+The component plays the loop of the surface under most grounded wheels. The volume follows the speed. A new surface plays only after it stays for **Switch Checks** checks, so a wheel on a border does not switch the loop each check. When the vehicle rolls onto **Water Surface** faster than **Splash Speed Kph**, the splash plays one time.
 
 ### Show the vehicle values on a board (cheat)
 
@@ -546,6 +560,21 @@ With **Use With Drivetrain** on:
 | Full Speed Kph | 15 | Speed in KPH that gives the full speed pitch and volume |
 | Follow Engine RPM | false | Follows the RPM against the maximum RPM in place of the speed |
 | Fade Seconds | 0.3 | Fade time when a player gets in or out |
+
+### Surface audio component
+
+| Setting | Default | Effect |
+|---|---|---|
+| Roll Loops | empty | The roll loop of each surface type |
+| Default Roll Loop | none | The loop of a surface with no entry. None plays no loop there |
+| Water Surface | Default | The surface type that plays the splash. Default plays no splash |
+| Splash Sound | none | The sound when the vehicle rolls onto the water surface |
+| Full Speed Kph | 15 | Speed that gives the full roll volume |
+| Full Speed Volume | 0.7 | Roll volume at the full speed |
+| Splash Speed Kph | 2 | The vehicle must be faster to splash |
+| Fade Seconds | 0.15 | Fade time of a loop |
+| Min Roll Speed Kph | 0.5 | The vehicle must be faster to play a loop |
+| Switch Checks | 3 | Checks in a row, ten each second, before a new surface plays |
 
 ### Vehicle cheats (Project Settings > Ns Vehicle Cheats)
 

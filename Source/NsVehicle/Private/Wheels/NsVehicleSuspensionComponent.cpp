@@ -795,7 +795,7 @@ void UNsVehicleSuspensionComponent::RenderWheelMesh()
 */
 }
 
-void UNsVehicleSuspensionComponent::DetachWheel(const FVector Impulse)
+void UNsVehicleSuspensionComponent::DetachWheel(const FVector Impulse, const bool bReleaseWheelBody)
 {
     if (bWheelDetached)
     {
@@ -811,6 +811,13 @@ void UNsVehicleSuspensionComponent::DetachWheel(const FVector Impulse)
     bWheelDetached = true;
     Hit = FHitResult();
     OutCompression = 0.f;
+
+    if (!bReleaseWheelBody)
+    {
+        WheelMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        WheelMeshComponent->SetVisibility(false, true);
+        return;
+    }
 
     const FVector InheritedVelocity = VehiclePrimitiveComponent != nullptr
         ? VehiclePrimitiveComponent->GetPhysicsLinearVelocityAtPoint(WheelMeshComponent->GetComponentLocation())
@@ -845,7 +852,7 @@ void UNsVehicleSuspensionComponent::ReattachWheel()
     WheelMeshComponent->AttachToComponent(this, FAttachmentTransformRules::SnapToTargetIncludingScale);
     WheelMeshComponent->SetRelativeRotation(bRotateWheel ? FRotator(0.f, 180.f, 0.f) : FRotator::ZeroRotator);
     ApplyWheelVisualScale(WheelScale);
-    WheelMeshComponent->SetVisibility(!bHideWheelMesh);
+    WheelMeshComponent->SetVisibility(!bHideWheelMesh, true);
 
     PreviousCompression = 0.f;
     bWheelDetached = false;

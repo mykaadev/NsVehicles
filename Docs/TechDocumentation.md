@@ -32,7 +32,7 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 | `Modules/Control/` | `UNsVehicleControlsComponent` |
 | `Modules/Powertrain/` | `UNsVehicleEngineComponent`, `UNsVehicleTransmissionComponent`, `UNsVehicleDrivetrainComponent` |
 | `Modules/Chassis/` | `UNsVehicleBrakeComponent`, `UNsVehicleSteeringComponent`, `UNsVehicleBodyDynamicsComponent`, `UNsVehicleAerodynamicsComponent`, `UNsVehicleAirControlComponent`, `UNsVehicleAntiGravityComponent`, `UNsVehicleIdleLockComponent`, `UNsVehicleSelfRightComponent` |
-| `Audio/` | `UNsVehicleMotorAudioComponent` |
+| `Audio/` | `UNsVehicleMotorAudioComponent`, `UNsVehicleSurfaceAudioComponent` |
 | `Modules/Network/` | `UNsVehicleNetworkComponent` |
 | `Modules/Animation/` | `UNsVehicleAnimationComponent` |
 | `Wheels/` | `UNsVehicleSuspensionComponent`, `UNsVehicleStaticWheel`, `UNsVehicleWheel` |
@@ -58,6 +58,7 @@ All folders are under `Source/NsVehicle/Public/` and `Source/NsVehicle/Private/`
 - `UNsVehicleSelfRightComponent` traces a line from the center of the body bounds down to **Ground Reach** below the bounds. `IsOverturned` compares the up of the body with the hit normal, or with the world up when the trace hits nothing. `UpdateSelfRight` calls `TryRollFromSteering` with the steering input of the Controls module. It adds a velocity change up and an angular velocity change around the body forward when the body is overturned, on the ground, slower than **Max Vertical Speed** up or down, and the pulse interval is over.
 - With **Scale Grip By Surface**, a suspension component reads the friction of the physical material of its hit after each trace in the physics step. It multiplies **Friction Coefficient** and **Max Lateral Force Scalar** by the clamped ratio to **Grip Reference Friction** where the drivetrain slip model uses them. The stored values do not change, so a game can set them for a new tire at any time.
 - `UNsVehicleMotorAudioComponent` is a `UAudioComponent`. It binds `ReceiveControllerChangedDelegate` of the owner pawn, fades in when a player controls the pawn, and ticks only while it plays.
+- `UNsVehicleSurfaceAudioComponent` is a `UAudioComponent` that ticks ten times each second. It counts the physical surface types under the grounded, attached wheels of the owner `ANsVehicle`, and plays the loop of the most common one.
 - The values board: `UNsVehicleCheatsSubsystem::SetShowValues` makes a transient `UNsVehicleValuesBoardComponent` (a world space `UWidgetComponent` with no collision) on the vehicle of the player. It sizes the board from the local bounds of the vehicle root and places it on the top of the rear. It has an absolute rotation, and turns its X axis to the camera of the first player each tick. `UNsVehicleValuesWidget` reads the vehicle with `ReadValues` and writes the text into `ValuesText` each tick. With no layout, it builds that text block in `NativeOnInitialized`.
 - `UNsVehicleWheel` is a static mesh with the tag `NsVehicleWheel`. The Animation module spins it.
 
@@ -118,7 +119,7 @@ The arcade powertrain uses the active gear ratio (3) and the active differential
 8. `UNsVehicleEngineComponent::BeginPlay` and `UNsVehicleBrakeComponent::BeginPlay` store the torque and the brake force. `SetEngineTorqueEnabled` and `SetBrakesEnabled` restore these values.
 9. `UNsVehicleAnimationComponent::InitializeAnimationSystem` replaces the suspension list with the children of the root whose first tag is `NsVehicleSuspensionComponent`.
 
-`DetachWheel` moves the wheel mesh out of the attachment tree and makes it simulate. The actor still owns the wheel mesh, so the wheel mesh is destroyed with the vehicle. `ReattachWheel` stops its physics, turns its collision off, and attaches it to the suspension component again.
+`DetachWheel` moves the wheel mesh out of the attachment tree and makes it simulate. The actor still owns the wheel mesh, so the wheel mesh is destroyed with the vehicle. `ReattachWheel` stops its physics, turns its collision off, and attaches it to the suspension component again. With `bReleaseWheelBody` false, `DetachWheel` only stops the forces and hides the wheel mesh with no collision. The mesh stays attached, and `ReattachWheel` shows it again.
 
 ## Extension Points
 
@@ -168,6 +169,7 @@ Module replacement is not supported. `ANsVehicle` has no `FObjectInitializer` co
 - The parked hold adds a few comparisons each frame, and one body trace each settle time when the vehicle is in the air.
 - The self right does nothing while it is off or while the steering input is 0. Else each frame does up to two line traces. `IsOverturned` does one line trace for each call.
 - The surface grip reads one physical material for each wheel in each physics step.
+- The surface audio component reads one physical material for each wheel ten times each second. Each check copies the suspension list once.
 - The values board ticks only while it shows. Each tick reads the vehicle values, copies the suspension list, and formats one text.
 - The reach tool runs only in the editor. Each tested point does one line trace, one sweep, and one overlap for water. A 400 by 400 m area at 50 cm is about 640000 points, so use a larger grid spacing or an extent for a first look.
 - `FindPath` tests each neighbor of each expanded state, so it can test a cell more than one time. It keeps the result of each step test, so a step runs its traces one time, also when the turn limit expands a cell for more than one heading. It stops at **Max Cells** expanded states. A goal far behind a wall can expand most of the reach area before the search fails. It runs in one frame on the game thread. It logs the expanded states, the tested steps, and the time to `LogNsVehiclePath` at Log verbosity.

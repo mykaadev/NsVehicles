@@ -74,9 +74,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
     void SetNewPhysicsBody(UPrimitiveComponent* physicsBody);
 
-    /** Releases the wheel mesh as a free physics body and stops all forces of this suspension. The impulse is a velocity change in cm/s. This is local only and does not replicate */
+    /** Stops all forces of this suspension and releases the wheel mesh as a free physics body. The impulse is a velocity change in cm/s. With bReleaseWheelBody off, the wheel mesh stays on the suspension, hidden and with no collision, for a game that shows its own loose wheel. This is local only and does not replicate */
     UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")
-    void DetachWheel(FVector Impulse);
+    void DetachWheel(FVector Impulse, bool bReleaseWheelBody = true);
 
     /** Puts a detached wheel mesh back on this suspension and starts the suspension forces again */
     UFUNCTION(BlueprintCallable, Category = "NsVehicleSuspensionComponent")

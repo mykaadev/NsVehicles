@@ -76,7 +76,7 @@ The `AsyncTickPhysics` sim callback calls `ANsVehicle::NativeAsyncTick` in `OnPr
 `UpdatePhysicsCore`:
 
 1. Reads the physics transform with `ATP_GetTransform`.
-2. Standard powertrain (`UpdateStandardPowertrain`): Engine torque, Transmission gear ratio and automatic shift, engine brake force, then on the ground: Brakes force, Drivetrain effective power, drive force and drive pitch torque, BodyDynamics pitch. Then Aerodynamics drag, Engine RPM, and Transmission shift timers. If the torque curve is missing, `UpdatePhysicsCore` returns at once and applies no force in that step.
+2. Standard powertrain (`UpdateStandardPowertrain`): Engine torque, Transmission gear ratio and automatic shift, engine brake force, then on the ground: Brakes force, Drivetrain effective power, drive force and drive pitch torque, BodyDynamics pitch. Then Aerodynamics drag, Engine RPM, and Transmission shift timers. `UpdateStandardRPM` uses the speed divided by the wheel radius when `bPhysicalWheelRpm` is on, and the first formula (speed times radius times 60 / 2 * PI) when it is off. Only the engine brake reads the absolute RPM. The shift, the brake, the RPM limit, and the audio read RPM against Max RPM. If the torque curve is missing, `UpdatePhysicsCore` returns at once and applies no force in that step.
 3. Arcade powertrain (`UpdateArcadePowertrain`): Engine arcade torque, Brakes arcade force, external resistance, then on the ground: drive force and BodyDynamics pitch.
 4. Steering drift torque, on the ground only.
 5. `UpdateMotionState`: local velocity, speed, and acceleration.

@@ -140,8 +140,11 @@ float UNsVehicleEngineComponent::GetEngineBrakeForce(const float Throttle, const
 
 void UNsVehicleEngineComponent::UpdateStandardRPM(const float DeltaTime, const float GearRatio, const float DifferentialRatio, const float WheelRadius, const float LinearVelocity, const float Throttle, const float Brakes, const bool bInAir, const UNsVehicleDrivetrainComponent& Drivetrain)
 {
-    // The order of operations matches the original tuning, so 60 / 2 * PI stays as written
-    const float WheelRPM = GearRatio * DifferentialRatio * LinearVelocity * WheelRadius * (60.f / 2.f * PI) * RPM_Multiplier;
+    // The first formula multiplies by the radius and by 60 / 2 * PI. Older vehicles are tuned on it, so it stays as written when bPhysicalWheelRpm is off
+    const float WheelTurnsPerMinute = bPhysicalWheelRpm
+        ? LinearVelocity / FMath::Max(WheelRadius, UE_KINDA_SMALL_NUMBER) * (60.f / (2.f * PI))
+        : LinearVelocity * WheelRadius * (60.f / 2.f * PI);
+    const float WheelRPM = GearRatio * DifferentialRatio * WheelTurnsPerMinute * RPM_Multiplier;
     constexpr float InterpSpeed = 15.f;
 
     if (Drivetrain.IsDrivetrainEnabled() && bInAir)

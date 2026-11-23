@@ -385,6 +385,7 @@ Every value is the default in the code. Some settings show only when another set
 | Torque Implementation | Constant | Constant torque, or torque from a curve |
 | Engine Torque Curve | none | Torque multiplier curve. X is the RPM |
 | Engine Brake Coefficient | 0.35 | Deceleration with no throttle |
+| Physical Wheel Rpm | off | On: the wheel RPM is the speed divided by the wheel radius, so a bigger wheel reaches Max RPM at a higher speed. Off: the first formula, the speed times the radius, which older vehicles use. A change needs a new Max RPM and Engine Brake Coefficient. For the same feel on one wheel of radius r (in m), multiply Max RPM by `1 / (r * r * PI * PI)`, and divide Engine Brake Coefficient by the same factor |
 
 ### Transmission
 

@@ -123,6 +123,13 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Engine", meta = (EditCondition = "PowertrainType==ENsVehicleBehaviorType::Standard", EditConditionHides))
     float RPM_Multiplier = 1.f;
 
+    /**
+     * True computes the wheel RPM as a real wheel turns: the speed divided by the wheel radius. A bigger wheel then reaches Max RPM at a higher speed
+     * False keeps the first formula, the speed times the radius times 60 / 2 * PI, so the tuning of older vehicles stays the same. On a change, scale Max RPM and Engine Brake Coefficient again
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Engine", meta = (EditCondition = "PowertrainType==ENsVehicleBehaviorType::Standard", EditConditionHides))
+    bool bPhysicalWheelRpm = false;
+
     /** How the standard powertrain gets the torque. Constant keeps the same torque in a gear. Curve reads the torque curve at the current RPM */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NsVehicle|Engine", meta = (EditCondition = "PowertrainType==ENsVehicleBehaviorType::Standard", EditConditionHides))
     ENsVehicleTorqueImplementation TorqueImplementation = ENsVehicleTorqueImplementation::ETI_Constant;
